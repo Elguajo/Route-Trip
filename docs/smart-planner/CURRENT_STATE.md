@@ -30,6 +30,9 @@ _Observed on 2026-09-06; this file reports implementation, not the roadmap._
 - `TripPlanningSettings.from_persisted()` copies a saved `TripPlannerSettings` row into an immutable calculation input. `TripAllocator` uses its first allowed profile and selected provider matrix only, deterministically clusters valid-coordinate POIs across the requested prospective days, honours start/end or return-to-start allocation anchors, and uses the saved duration/distance objective for clustering.
 - Every input POI appears exactly once in the non-persisted `TripAllocationResult`; coordinate-less POIs are assigned deterministically and explicitly diagnosed. Provider/profile failures, snapshot mismatches, incomplete matrices, and unavailable distance values return a stable balanced allocation with typed diagnostics and no provider or geodesic fallback.
 - Each prospective allocation day invokes the existing Phase 002 `TripOptimizer` for its internal order. This calculation layer adds no route, persistence, API, UI, migration, `TripDay`, `TripItem`, sequence, or settings mutation.
+- Authenticated `POST /api/trips/{tripId}/optimize` now returns a non-mutating whole-trip proposal from the saved `TripPlannerSettings`, including POI assignment/day/sequence snapshot, opaque stale-preview token, prospective target days, allocator/day diagnostics, and aggregate matrix-backed totals. It plans only POI-backed `TripItem` rows; unrelated itinerary entries stay assigned and sequenced as-is.
+- `POST /api/trips/{tripId}/optimize/apply` requires the preview snapshot/token, rechecks current persisted POI assignments, settings, selected routing provider, and target days, then recalculates on that provider. It rejects stale or incomplete results, creates only non-empty missing planned days, and atomically updates only eligible POI `day_id`/`sequence`. Unrelated non-POI items retain their assignment and sequence; planned POIs receive sequence slots after any such retained items in a target day.
+- The Angular `TripPlannerService` exposes typed whole-trip preview/apply calls. The trip UI shows saved planner inputs, a whole-trip preview with totals, allocation/diagnostics, explicit Apply and Cancel, and reloads the trip after apply before rerendering affected day routes.
 
 ## Partially implemented
 
@@ -39,7 +42,7 @@ _Observed on 2026-09-06; this file reports implementation, not the roadmap._
 
 ## Not implemented
 
-- Whole-trip preview/apply endpoint, transactional persistence, planner UI, and aggregate optimisation score.
+- Planner-settings editor (whole-trip preview/apply uses the already persisted settings).
 - Drag-and-drop (button and keyboard reorder are implemented).
 - Day planner settings, time budgets, route segments, or persisted optimisation summaries.
 - Live travel mode, visit statuses (`planned`/`next`/`visited`/`skipped`), remaining-route optimization, or location watch/debounce.
@@ -54,8 +57,8 @@ _Observed on 2026-09-06; this file reports implementation, not the roadmap._
 
 ## Tests status
 
-- `cd backend && python -m pytest` could not start on 2026-09-06 because this shell has no `python` executable. An isolated `backend/.venv` was created with Python 3.12.10; `cd backend && .venv/bin/python -m pytest` now passes 54 tests, including planner-settings migration backfill/rollback, API serialization/persistence, preview/apply isolation, scoped manual-reorder success, invalid-snapshot preservation, provider diagnostics, and the existing OSM direct-route regression.
-- `cd src && npm run build` passed on 2026-09-06 (with pre-existing bundle-budget/CommonJS warnings). `cd src && npm test -- --watch=false` runs the configured Karma/Jasmine target and passed 7 focused planner specs in Chrome, including keyboard reorder, selected-day rerendering, and blocking Apply when diagnostics report no complete matrix. `git diff --check` passed.
+- `cd backend && python -m pytest` could not start on 2026-09-06 because this shell has no `python` executable. An isolated `backend/.venv` was created with Python 3.12.10; `cd backend && .venv/bin/python -m pytest` now passes 64 tests, including whole-trip preview non-mutation, stale snapshot protection, atomic rollback, diagnostics/coordinate-less POI retention, persisted/reloaded allocation, and the existing Phase 001/002 regressions.
+- `cd src && npm run build` passed on 2026-09-06 (with pre-existing bundle-budget/CommonJS warnings). `cd src && npm test -- --watch=false` runs the configured Karma/Jasmine target and passed 9 focused planner specs in Chrome, including explicit whole-trip preview/Apply/Cancel behavior. `git diff --check` passed.
 - The focused backend test command is recorded in `TEST_PLAN.md`; the production dependency manifest remains unchanged.
 
 ## Database state
@@ -66,4 +69,4 @@ _Observed on 2026-09-06; this file reports implementation, not the roadmap._
 
 ## Current active phase
 
-Phase 001 — Routing foundation is complete. Phase 002 — Optimize one day is complete: `SP-002-01` persisted and backfilled `TripItem.sequence` without changing the existing time-ordered display, `SP-002-02` added deterministic non-mutating order/cost calculation, `SP-002-03` exposes preview/apply APIs with atomic selected-day persistence, `SP-002-04` added the typed planner client, visible preview/apply flow, accessible manual order, and selected-day route replacement, and `SP-002-05` verified acceptance criteria and regressions. Phase 003 is in progress: `SP-003-01` added compatible trip-level planner settings; `SP-003-02` added an isolated deterministic matrix-informed allocation and per-day order calculation. Whole-trip preview/apply and UI have not begun.
+Phase 001 — Routing foundation is complete. Phase 002 — Optimize one day is complete: `SP-002-01` persisted and backfilled `TripItem.sequence` without changing the existing time-ordered display, `SP-002-02` added deterministic non-mutating order/cost calculation, `SP-002-03` exposes preview/apply APIs with atomic selected-day persistence, `SP-002-04` added the typed planner client, visible preview/apply flow, accessible manual order, and selected-day route replacement, and `SP-002-05` verified acceptance criteria and regressions. Phase 003 is in progress: `SP-003-01` added compatible trip-level planner settings; `SP-003-02` added isolated deterministic allocation/order calculation; `SP-003-03` now exposes whole-trip preview/apply and explicit planning UI with transactional POI persistence. Only SP-003-04 verification remains.

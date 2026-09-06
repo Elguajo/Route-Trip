@@ -1,4 +1,5 @@
 import { LinkItem, Place } from './poi';
+import { TripPlannerSettings } from './planner';
 
 export interface TripBase {
   id: number;
@@ -27,6 +28,7 @@ export interface Trip {
   notes?: string;
   archival_review?: string;
   attachments?: TripAttachment[];
+  planner_settings?: TripPlannerSettings;
 
   // POST / PUT
   places: Place[];

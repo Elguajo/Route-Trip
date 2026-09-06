@@ -105,3 +105,13 @@
 **Why:** The allocation strategy needs planner policy but must remain independently testable and safe to reuse by a later preview/apply transaction. A complete matrix avoids partial or estimated clustering, while delegating per-day order preserves one source of truth for the established Phase 002 contract.
 
 **Alternatives considered:** Let allocation import and mutate ORM trip/day rows; use straight-line clustering when a matrix is unavailable; select any supported profile or provider; reimplement the day ordering heuristic. These options would blur calculation and persistence, hide routing behaviour, or fork tested ordering logic.
+
+## ADR-012 — Whole-trip apply snapshots POI positions and retains unmanaged itinerary items
+
+**Status:** Accepted
+
+**Decision:** Whole-trip preview returns every eligible POI-backed `TripItem` as an `(item_id, day_id, sequence)` snapshot plus an opaque token derived from that snapshot, persisted planner settings, the selected routing provider, and current target-day set. Apply requires both values, recalculates through the existing `TripAllocator`, and atomically creates only non-empty missing days and updates only eligible POI assignments/sequences. Non-POI itinerary items are not allocated, moved, or resequenced; when sharing a target day, POIs are written after their retained sequence slots.
+
+**Why:** The compare-and-apply boundary must reject stale assignments and settings rather than silently applying a newly recalculated plan the user never reviewed. POI allocation also cannot disturb bookings, notes, or generic itinerary entries that are outside the Phase 003 POI policy. Keeping those rows untouched gives a clear diagnostic policy while retaining every eligible POI, including coordinate-less ones.
+
+**Alternatives considered:** Accept only an item-ID list; trust a client-supplied proposed allocation; apply the newest settings without invalidating the preview; resequence or move every item in a target day. These weaken stale protection, duplicate backend authority, or modify unrelated itinerary data.

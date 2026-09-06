@@ -92,7 +92,8 @@ import { LinkChipComponent } from '../../shared/link-chip/link-chip.component';
 import { ItemGalleryComponent } from '../../shared/item-gallery/item-gallery.component';
 import { TripSkeletonComponent } from '../../shared/trip-skeleton/trip-skeleton.component';
 import { DayPlannerService } from '../../services/day-planner.service';
-import { DayOptimizationResult, PlannerRoutingProfile } from '../../types/planner';
+import { TripPlannerService } from '../../services/trip-planner.service';
+import { DayOptimizationResult, PlannerRoutingProfile, TripOptimizationPreviewResult } from '../../types/planner';
 
 const HIGHLIGHT_COLORS = [
   '#e6194b',
@@ -173,6 +174,7 @@ export class TripComponent implements AfterViewInit, OnDestroy {
   clipboard: Clipboard;
   routeManager: RouteManagerService;
   dayPlanner: DayPlannerService;
+  tripPlanner: TripPlannerService;
   changeDetectionRef: ChangeDetectorRef;
   translocoService: TranslocoService;
   mapService: TripMapService;
@@ -212,6 +214,10 @@ export class TripComponent implements AfterViewInit, OnDestroy {
   isPlannerPreviewLoading = signal(false);
   isPlannerApplyLoading = signal(false);
   isPlannerReorderLoading = signal(false);
+  tripPlanningPreview = signal<TripOptimizationPreviewResult | null>(null);
+  tripPlanningError = signal<string | null>(null);
+  isTripPlanningPreviewLoading = signal(false);
+  isTripPlanningApplyLoading = signal(false);
   dayRouteSummaries = signal<Map<number, DayRouteSummary>>(new Map());
   plannerProfile: PlannerRoutingProfile = 'car';
   private readonly dayRouteRuns = new Map<number, number>();
@@ -506,6 +512,7 @@ export class TripComponent implements AfterViewInit, OnDestroy {
     this.clipboard = inject(Clipboard);
     this.routeManager = inject(RouteManagerService);
     this.dayPlanner = inject(DayPlannerService);
+    this.tripPlanner = inject(TripPlannerService);
     this.changeDetectionRef = inject(ChangeDetectorRef);
     this.translocoService = inject(TranslocoService);
     this.mapService = inject(TripMapService);
@@ -3216,6 +3223,68 @@ export class TripComponent implements AfterViewInit, OnDestroy {
 
   plannerDayItems(day: TripDay): TripItem[] {
     return [...day.items].sort((a, b) => a.sequence - b.sequence || a.id - b.id);
+  }
+
+  previewTripPlan(): void {
+    const trip = this.trip();
+    if (!trip || trip.archived) return;
+
+    this.tripPlanningError.set(null);
+    this.isTripPlanningPreviewLoading.set(true);
+    this.tripPlanner
+      .preview(trip.id)
+      .pipe(take(1))
+      .subscribe({
+        next: (preview) => {
+          this.tripPlanningPreview.set(preview);
+          this.isTripPlanningPreviewLoading.set(false);
+        },
+        error: (error) => {
+          this.tripPlanningPreview.set(null);
+          this.tripPlanningError.set(this.plannerErrorMessage(error, 'Unable to preview this trip.'));
+          this.isTripPlanningPreviewLoading.set(false);
+        },
+      });
+  }
+
+  cancelTripPlanPreview(): void {
+    this.tripPlanningPreview.set(null);
+    this.tripPlanningError.set(null);
+  }
+
+  applyTripPlan(): void {
+    const trip = this.trip();
+    const preview = this.tripPlanningPreview();
+    if (!trip || trip.archived || !preview || !preview.totals) return;
+
+    this.tripPlanningError.set(null);
+    this.isTripPlanningApplyLoading.set(true);
+    this.tripPlanner
+      .apply(trip.id, {
+        starting_assignments: preview.starting_assignments,
+        snapshot_token: preview.snapshot_token,
+      })
+      .pipe(
+        take(1),
+        switchMap((result) => this.apiService.getTrip(trip.id).pipe(map((reloaded) => ({ result, reloaded })))),
+      )
+      .subscribe({
+        next: ({ result, reloaded }) => {
+          this.trip.set(reloaded);
+          const affectedDayIds = new Set([
+            ...result.applied_day_ids,
+            ...result.starting_assignments.map((assignment) => assignment.day_id),
+          ]);
+          reloaded.days.filter((day) => affectedDayIds.has(day.id)).forEach((day) => this.dayRouting(day, true));
+          this.tripPlanningPreview.set(null);
+          this.isTripPlanningApplyLoading.set(false);
+          this.utilsService.toast('success', 'Plan Trip', 'The planned allocation was applied.');
+        },
+        error: (error) => {
+          this.tripPlanningError.set(this.plannerErrorMessage(error, 'Unable to apply this preview.'));
+          this.isTripPlanningApplyLoading.set(false);
+        },
+      });
   }
 
   plannerPreviewFor(day: TripDay): DayOptimizationResult | null {

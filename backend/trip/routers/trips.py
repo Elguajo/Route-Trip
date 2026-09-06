@@ -1,5 +1,6 @@
-from hashlib import md5
+from hashlib import md5, sha256
 from io import BytesIO
+import json
 from typing import Annotated
 
 from fastapi import (APIRouter, Depends, File, HTTPException, Request,
@@ -42,7 +43,10 @@ from ..optimization import (DayItemSnapshot, DayManualReorderRequest, DayOptimiz
                             DayOptimizationApplyResult,
                             DayOptimizationPreviewRequest,
                             DayOptimizationResult, OSRMTableRoutingProvider,
-                            TravelMatrixCache, TripOptimizer)
+                            TravelMatrixCache, TripAllocator, TripOptimizationApplyRequest,
+                            TripOptimizationApplyResult, TripOptimizationPreviewResult,
+                            TripPlanningSettings, TripPlanningSnapshotAssignment,
+                            TripPlanningTotals, TripOptimizer)
 from ..utils.date import dt_utc
 from ..utils.ical import build_trip_ics, ics_filename
 from ..utils.link_titles import resolve_links
@@ -93,6 +97,128 @@ def _day_optimizer_for_user(session: SessionDep, current_user: str) -> TripOptim
         raise HTTPException(status_code=404, detail="User not found")
     provider = OSRMTableRoutingProvider(user.map_provider.value, cache=_day_matrix_cache)
     return TripOptimizer(provider)
+
+
+def _trip_allocator_for_user(session: SessionDep, current_user: str) -> TripAllocator:
+    """Use the same authenticated selected-provider boundary as day planning."""
+
+    user = session.get(User, current_user)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return TripAllocator(OSRMTableRoutingProvider(user.map_provider.value, cache=_day_matrix_cache))
+
+
+def _ordered_trip_days(session: SessionDep, trip_id: int) -> list[TripDay]:
+    return list(
+        session.exec(
+            select(TripDay)
+            .where(TripDay.trip_id == trip_id)
+            .order_by(TripDay.dt.asc().nulls_last(), TripDay.label, TripDay.id)
+        )
+    )
+
+
+def _eligible_trip_planning_items(session: SessionDep, trip_id: int) -> list[TripItem]:
+    """Return only POI-backed items; generic itinerary entries stay untouched.
+
+    A POI may lack usable coordinates, but it remains eligible and is carried by
+    ``TripAllocator`` with its existing coordinate-less diagnostic.
+    """
+
+    return list(
+        session.exec(
+            select(TripItem)
+            .join(TripDay)
+            .options(selectinload(TripItem.place))
+            .where(TripDay.trip_id == trip_id, TripItem.place_id.is_not(None))
+            .order_by(TripItem.day_id, TripItem.sequence, TripItem.id)
+        )
+    )
+
+
+def _planning_item_snapshots(items: list[TripItem]) -> tuple[DayItemSnapshot, ...]:
+    """Prefer item coordinates, then the linked POI's coordinates for planning."""
+
+    return tuple(
+        DayItemSnapshot(
+            item_id=item.id,
+            sequence=item.sequence,
+            lat=item.lat if item.lat is not None else item.place.lat if item.place else None,
+            lng=item.lng if item.lng is not None else item.place.lng if item.place else None,
+        )
+        for item in items
+    )
+
+
+def _planning_assignments(items: list[TripItem]) -> tuple[TripPlanningSnapshotAssignment, ...]:
+    return tuple(
+        TripPlanningSnapshotAssignment(item_id=item.id, day_id=item.day_id, sequence=item.sequence)
+        for item in items
+    )
+
+
+def _planning_snapshot_token(
+    settings: TripPlanningSettings,
+    assignments: tuple[TripPlanningSnapshotAssignment, ...],
+    target_day_ids: tuple[int | None, ...],
+    routing_provider: str,
+) -> str:
+    """Bind apply to every persisted input that can change this proposal."""
+
+    payload = {
+        "settings": settings.model_dump(mode="json"),
+        "assignments": [assignment.model_dump(mode="json") for assignment in assignments],
+        "target_day_ids": target_day_ids,
+        "routing_provider": routing_provider,
+    }
+    return sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
+def _planning_totals(allocation) -> TripPlanningTotals | None:
+    comparisons = tuple(day.optimization.cost_comparison for day in allocation.days)
+    if any(comparison is None for comparison in comparisons):
+        return None
+    comparisons = tuple(comparison for comparison in comparisons if comparison is not None)
+    starting_distances = tuple(comparison.starting.distance_m for comparison in comparisons)
+    optimized_distances = tuple(comparison.optimized.distance_m for comparison in comparisons)
+    return TripPlanningTotals(
+        starting_duration_s=sum(comparison.starting.duration_s for comparison in comparisons),
+        optimized_duration_s=sum(comparison.optimized.duration_s for comparison in comparisons),
+        starting_distance_m=None if any(distance is None for distance in starting_distances) else sum(starting_distances),
+        optimized_distance_m=None if any(distance is None for distance in optimized_distances) else sum(optimized_distances),
+    )
+
+
+async def _whole_trip_preview(
+    session: SessionDep, trip_id: int, current_user: str
+) -> tuple[TripOptimizationPreviewResult, list[TripItem]]:
+    settings_row = session.get(TripPlannerSettings, trip_id) or TripPlannerSettings(trip_id=trip_id)
+    settings = TripPlanningSettings.from_persisted(settings_row)
+    user = session.get(User, current_user)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    items = _eligible_trip_planning_items(session, trip_id)
+    assignments = _planning_assignments(items)
+    existing_day_ids = tuple(day.id for day in _ordered_trip_days(session, trip_id))
+    target_day_ids = tuple(
+        existing_day_ids[index] if index < len(existing_day_ids) else None
+        for index in range(settings.requested_days)
+    )
+    allocation = await _trip_allocator_for_user(session, current_user).allocate(
+        settings, _planning_item_snapshots(items)
+    )
+    return (
+        TripOptimizationPreviewResult(
+            starting_assignments=assignments,
+            snapshot_token=_planning_snapshot_token(
+                settings, assignments, target_day_ids, user.map_provider.value
+            ),
+            target_day_ids=target_day_ids,
+            allocation=allocation,
+            totals=_planning_totals(allocation),
+        ),
+        items,
+    )
 
 
 def _trip_from_token_or_404(session, token: str) -> TripShare:
@@ -550,6 +676,91 @@ async def preview_optimize_day(
     items = _ordered_day_items(session, day_id)
     return await _day_optimizer_for_user(session, current_user).optimize_day(
         DayItemSnapshot.from_trip_items(items), data.profile
+    )
+
+
+@router.post("/{trip_id}/optimize", response_model=TripOptimizationPreviewResult)
+async def preview_optimize_trip(
+    trip_id: int,
+    session: SessionDep,
+    current_user: Annotated[str, Depends(get_current_username)],
+) -> TripOptimizationPreviewResult:
+    """Preview a saved-settings whole-trip allocation without persisting it."""
+
+    _get_verified_trip(session, trip_id, current_user)
+    preview, _ = await _whole_trip_preview(session, trip_id, current_user)
+    return preview
+
+
+@router.post("/{trip_id}/optimize/apply", response_model=TripOptimizationApplyResult)
+async def apply_optimize_trip(
+    data: TripOptimizationApplyRequest,
+    trip_id: int,
+    session: SessionDep,
+    current_user: Annotated[str, Depends(get_current_username)],
+) -> TripOptimizationApplyResult:
+    """Recalculate and atomically persist an explicitly previewed whole-trip plan."""
+
+    trip = _get_verified_trip(session, trip_id, current_user)
+    if trip.archived:
+        raise HTTPException(status_code=400, detail="Bad request")
+
+    preview, items = await _whole_trip_preview(session, trip_id, current_user)
+    if preview.starting_assignments != data.starting_assignments or preview.snapshot_token != data.snapshot_token:
+        raise HTTPException(status_code=409, detail="Trip itinerary or planner settings changed; preview it again before applying")
+    if preview.totals is None:
+        raise HTTPException(status_code=422, detail="Trip cannot be optimized with the current routing matrix")
+
+    planned_item_ids = tuple(
+        item_id
+        for day in preview.allocation.days
+        for item_id in day.optimization.optimized_item_ids
+    )
+    expected_item_ids = tuple(item.id for item in items)
+    if len(planned_item_ids) != len(expected_item_ids) or set(planned_item_ids) != set(expected_item_ids):
+        raise HTTPException(status_code=422, detail="Invalid trip optimization result")
+
+    target_day_ids = list(preview.target_day_ids)
+    applied_day_ids: list[int] = []
+    eligible_item_ids = set(expected_item_ids)
+    try:
+        for allocation_day in preview.allocation.days:
+            optimized_item_ids = allocation_day.optimization.optimized_item_ids
+            if not optimized_item_ids:
+                continue
+            target_day_id = target_day_ids[allocation_day.day_index]
+            if target_day_id is None:
+                new_day = TripDay(label=f"Planned day {allocation_day.day_index + 1}", trip_id=trip_id)
+                session.add(new_day)
+                session.flush()
+                target_day_id = new_day.id
+                target_day_ids[allocation_day.day_index] = target_day_id
+
+            preserved_sequence = session.exec(
+                select(TripItem.sequence)
+                .where(TripItem.day_id == target_day_id, TripItem.id.not_in(eligible_item_ids))
+                .order_by(TripItem.sequence.desc())
+                .limit(1)
+            ).first()
+            sequence_start = preserved_sequence + 1 if preserved_sequence is not None else 0
+            for offset, item_id in enumerate(optimized_item_ids):
+                session.exec(
+                    update(TripItem)
+                    .where(TripItem.id == item_id)
+                    .values(day_id=target_day_id, sequence=sequence_start + offset)
+                )
+            applied_day_ids.append(target_day_id)
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise HTTPException(status_code=500, detail="Failed to apply trip optimization")
+
+    return TripOptimizationApplyResult(
+        **{
+            **preview.model_dump(),
+            "target_day_ids": tuple(target_day_ids),
+            "applied_day_ids": tuple(applied_day_ids),
+        }
     )
 
 

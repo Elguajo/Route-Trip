@@ -36,6 +36,27 @@ const preview: DayOptimizationResult = {
   diagnostics: [{ kind: 'coordinateless_item', item_ids: [], message: 'A diagnostic' }],
 };
 
+const tripPlanPreview = {
+  starting_assignments: [
+    { item_id: 1, day_id: 7, sequence: 0 },
+    { item_id: 2, day_id: 7, sequence: 1 },
+  ],
+  snapshot_token: 'preview-token',
+  target_day_ids: [7],
+  allocation: {
+    requested_days: 1,
+    profile: 'car' as const,
+    days: [{ day_index: 0, item_ids: [1, 2], optimization: preview }],
+    diagnostics: [],
+  },
+  totals: {
+    starting_duration_s: 600,
+    optimized_duration_s: 420,
+    starting_distance_m: 1200,
+    optimized_distance_m: 800,
+  },
+};
+
 function plannerComponent() {
   const component = Object.create(TripComponent.prototype) as any;
   component.trip = signal(trip);
@@ -46,6 +67,10 @@ function plannerComponent() {
   component.isPlannerPreviewLoading = signal(false);
   component.isPlannerApplyLoading = signal(false);
   component.isPlannerReorderLoading = signal(false);
+  component.tripPlanningPreview = signal(null);
+  component.tripPlanningError = signal(null);
+  component.isTripPlanningPreviewLoading = signal(false);
+  component.isTripPlanningApplyLoading = signal(false);
   component.plannerProfile = 'car';
   component.utilsService = { toast: jasmine.createSpy('toast') };
   component.replaceSelectedDay = jasmine.createSpy('replaceSelectedDay');
@@ -138,5 +163,39 @@ describe('TripComponent planner flow', () => {
 
     expect(component.trip().days).toEqual([updatedDay]);
     expect(component.dayRouting).toHaveBeenCalledWith(updatedDay, true);
+  });
+
+  it('keeps a whole-trip preview local until explicit Apply and lets the user cancel it', () => {
+    const component = plannerComponent();
+    component.tripPlanner = { preview: jasmine.createSpy().and.returnValue(of(tripPlanPreview)) };
+
+    component.previewTripPlan();
+
+    expect(component.tripPlanner.preview).toHaveBeenCalledWith(11);
+    expect(component.tripPlanningPreview()).toEqual(tripPlanPreview);
+    expect(component.trip().days).toEqual([day]);
+
+    component.cancelTripPlanPreview();
+
+    expect(component.tripPlanningPreview()).toBeNull();
+  });
+
+  it('sends the whole-trip stale snapshot only after explicit Apply', () => {
+    const component = plannerComponent();
+    component.tripPlanningPreview.set(tripPlanPreview);
+    component.tripPlanner = {
+      apply: jasmine.createSpy().and.returnValue(of({ ...tripPlanPreview, applied: true, applied_day_ids: [7] })),
+    };
+    component.apiService = { getTrip: jasmine.createSpy().and.returnValue(of(trip)) };
+    component.dayRouting = jasmine.createSpy('dayRouting');
+
+    component.applyTripPlan();
+
+    expect(component.tripPlanner.apply).toHaveBeenCalledWith(11, {
+      starting_assignments: tripPlanPreview.starting_assignments,
+      snapshot_token: 'preview-token',
+    });
+    expect(component.apiService.getTrip).toHaveBeenCalledWith(11);
+    expect(component.tripPlanningPreview()).toBeNull();
   });
 });

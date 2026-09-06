@@ -52,3 +52,70 @@ export interface DayManualReorderRequest {
 }
 
 export type ReorderedTripDay = TripDay;
+
+export type TripPlannerObjective = 'duration' | 'distance';
+
+export interface TripPlannerSettings {
+  requested_days: number;
+  start_location: { lat: number; lng: number } | null;
+  end_location: { lat: number; lng: number } | null;
+  return_to_start: boolean;
+  allowed_profiles: PlannerRoutingProfile[];
+  objective: TripPlannerObjective;
+}
+
+export interface TripPlanningSnapshotAssignment {
+  item_id: number;
+  day_id: number;
+  sequence: number;
+}
+
+export interface TripAllocationDiagnostic {
+  kind:
+    | 'coordinateless_item'
+    | 'matrix_failure'
+    | 'incomplete_matrix'
+    | 'matrix_snapshot_mismatch'
+    | 'distance_objective_unavailable';
+  message: string;
+  item_ids: number[];
+  routing_failure?: RoutingFailure | null;
+}
+
+export interface TripAllocationDay {
+  day_index: number;
+  item_ids: number[];
+  optimization: DayOptimizationResult;
+}
+
+export interface TripAllocationResult {
+  requested_days: number;
+  profile: PlannerRoutingProfile;
+  days: TripAllocationDay[];
+  diagnostics: TripAllocationDiagnostic[];
+}
+
+export interface TripPlanningTotals {
+  starting_duration_s: number;
+  optimized_duration_s: number;
+  starting_distance_m: number | null;
+  optimized_distance_m: number | null;
+}
+
+export interface TripOptimizationPreviewResult {
+  starting_assignments: TripPlanningSnapshotAssignment[];
+  snapshot_token: string;
+  target_day_ids: (number | null)[];
+  allocation: TripAllocationResult;
+  totals: TripPlanningTotals | null;
+}
+
+export interface TripOptimizationApplyRequest {
+  starting_assignments: TripPlanningSnapshotAssignment[];
+  snapshot_token: string;
+}
+
+export interface TripOptimizationApplyResult extends TripOptimizationPreviewResult {
+  applied: true;
+  applied_day_ids: number[];
+}

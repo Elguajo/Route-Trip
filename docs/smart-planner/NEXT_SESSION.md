@@ -2,11 +2,11 @@
 
 ## Current phase
 
-Phase 003 — Trip optimization (SP-003-01 and SP-003-02 complete)
+Phase 003 — Trip optimization (SP-003-01 through SP-003-03 complete)
 
 ## Goal
 
-SP-003-02 is verified. Do not begin SP-003-03 unless explicitly requested.
+SP-003-03 is verified. Do not begin SP-003-04 unless explicitly requested.
 
 ## Already completed
 
@@ -38,10 +38,14 @@ SP-003-02 is verified. Do not begin SP-003-03 unless explicitly requested.
 - `SP-003-02` added the isolated `TripPlanningSettings` calculation snapshot and `TripAllocator`. It copies saved settings without retaining ORM state, selects only the first persisted allowed profile, obtains one complete selected-provider matrix for prospective allocation, uses deterministic farthest-seed geographic clustering plus start/end or return-to-start anchors, and applies the saved duration/distance objective without metric fallback.
 - The allocator retains every input POI exactly once; coordinate-less POIs receive a deterministic balanced assignment and diagnostics. Unsupported/provider failures, snapshot mismatches, incomplete matrices, and missing distance data for a distance objective produce a stable balanced allocation and explicit typed diagnostics. It then calls the unchanged Phase 002 `TripOptimizer` independently for each prospective day.
 - `SP-003-02` adds no public endpoint, UI, database writes, migration, provider fallback, direct OSRM dependency, geodesic estimate, or modification of `TripDay`, `TripItem`, sequence, or settings. `backend/tests/test_trip_allocator.py` covers geographic allocation, saved profile/objective/anchors, input-order stability, coordinate-less retention, unsupported providers/no fallback, and Phase 002 per-day integration. Full validation: `cd backend && .venv/bin/python -m pytest` passed 59 tests; `cd src && npm test -- --watch=false` passed 7 tests; `cd src && npm run build` passed with existing bundle-budget/CommonJS warnings; `git diff --check` passed.
+- `SP-003-03` adds authenticated `POST /api/trips/{tripId}/optimize` preview and explicit `POST /api/trips/{tripId}/optimize/apply`. The preview is non-mutating and includes all POI assignment/day/sequence inputs, a token covering those inputs plus current settings, selected provider, and target days, prospective allocation, diagnostics, and aggregate costs. Apply checks both stale guards, recalculates only with the authenticated user's selected provider, rejects incomplete results, and atomically creates only needed non-empty days and updates only POI assignments/sequences.
+- POI-backed items are the Phase 003 eligibility policy; ordinary itinerary items remain in their current day and sequence. Coordinate-less/invalid-coordinate POIs stay allocated and emit existing diagnostics. No provider fallback, direct OSRM call outside the adapter, or geodesic estimate was added.
+- `TripPlannerService` and the trip panel provide typed whole-trip Preview / Apply / Cancel. Apply reloads the persisted trip and rerenders affected day routes only after success; it has no implicit application path.
+- `backend/tests/test_optimize_trip_api.py` covers preview non-mutation, persisted/reloaded allocation, stale snapshot rejection, coordinate-less diagnostics/retention, and atomic rollback. Full validation: `cd backend && .venv/bin/python -m pytest` passed 64 tests; `cd src && npm test -- --watch=false` passed 9 tests; `cd src && npm run build` passed with existing bundle-budget/CommonJS warnings; `git diff --check` passed.
 
 ## Next task
 
-`SP-003-02` is complete. Start `SP-003-03` only with explicit direction; add whole-trip preview/apply wiring around the existing calculation boundary without duplicating allocation/order logic, and preserve Phase 001/002 contracts.
+`SP-003-03` is complete. Start `SP-003-04` only with explicit direction; verify Phase 003 multi-day allocation/endpoints/persistence against its acceptance criteria without expanding planning behaviour, and preserve Phase 001/002 contracts.
 
 ## Files to read
 
@@ -54,10 +58,12 @@ SP-003-02 is verified. Do not begin SP-003-03 unless explicitly requested.
 - `backend/trip/routers/trips.py`
 - `backend/trip/alembic/versions/e4b3f14f9a2c_trip_planner_settings.py`
 - `backend/trip/optimization/trip_allocator.py`
+- `backend/tests/test_optimize_trip_api.py`
+- `src/src/app/services/trip-planner.service.ts`
 
 ## Files likely to modify
 
-- `backend/trip/routers/trips.py` for the future authenticated whole-trip preview/apply boundary, plus the typed Angular planner client/UI. Keep `backend/trip/optimization/trip_allocator.py` non-persisting and provider-neutral.
+- SP-003-04 should be validation-only unless it exposes a verified defect. Keep `backend/trip/optimization/trip_allocator.py` non-persisting and provider-neutral.
 
 ## Important decisions
 
@@ -72,6 +78,7 @@ SP-003-02 is verified. Do not begin SP-003-03 unless explicitly requested.
 - Manual reorder is a separate complete-list transaction scoped to one authorized trip/day. This prevents ordinary item updates from changing planner sequence, validates that no item is added/removed/cross-day, and lets the UI replace only that day from the backend response.
 - Planner inputs live in a defaulted one-to-one `TripPlannerSettings` record rather than `Trip` columns. The setting API replaces a complete validated snapshot; its defaults let existing trips and old backup imports keep their prior behavior until whole-trip planning is explicitly invoked.
 - Allocation copies the saved settings row into an immutable calculation snapshot and is deterministic: the first allowed profile is the sole selected profile; a complete selected-provider matrix drives duration/distance grouping; coordinate-less and non-routable cases retain every input ID in a stable balanced allocation with diagnostics. Per-day order delegates to the existing Phase 002 calculator; this layer never persists or exposes a preview/apply API.
+- Whole-trip apply is another explicit compare-and-apply boundary: it requires the previewed POI `(id, day, sequence)` snapshot and a token covering saved settings, selected provider, and target days, recalculates server-side, and updates only POIs. Generic itinerary items are retained in place and keep their sequence; only required non-empty target days are created.
 
 ## Blockers
 

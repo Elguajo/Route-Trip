@@ -22,6 +22,11 @@ from .trip_allocator import (
     TripAllocationObjective,
     TripAllocationResult,
     TripAllocator,
+    TripOptimizationApplyRequest,
+    TripOptimizationApplyResult,
+    TripOptimizationPreviewResult,
+    TripPlanningSnapshotAssignment,
+    TripPlanningTotals,
     TripPlanningSettings,
 )
 from .routing import (
@@ -68,6 +73,11 @@ __all__ = [
     "TripAllocationObjective",
     "TripAllocationResult",
     "TripAllocator",
+    "TripOptimizationApplyRequest",
+    "TripOptimizationApplyResult",
+    "TripOptimizationPreviewResult",
+    "TripPlanningSnapshotAssignment",
+    "TripPlanningTotals",
     "TripPlanningSettings",
     "TripOptimizer",
     "get_routing_capability",

@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from enum import Enum
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .day_optimizer import (
     DayItemSnapshot,
@@ -117,6 +117,63 @@ class TripAllocationResult(BaseModel):
     profile: RoutingProfile
     days: tuple[TripAllocationDay, ...]
     diagnostics: tuple[TripAllocationDiagnostic, ...] = ()
+
+
+class TripPlanningSnapshotAssignment(BaseModel):
+    """The persisted POI position a whole-trip preview was calculated from."""
+
+    model_config = ConfigDict(frozen=True)
+
+    item_id: int
+    day_id: int
+    sequence: int
+
+
+class TripPlanningTotals(BaseModel):
+    """Aggregate matrix-backed totals for a whole-trip proposal."""
+
+    model_config = ConfigDict(frozen=True)
+
+    starting_duration_s: float = Field(ge=0)
+    optimized_duration_s: float = Field(ge=0)
+    starting_distance_m: float | None = Field(default=None, ge=0)
+    optimized_distance_m: float | None = Field(default=None, ge=0)
+
+
+class TripOptimizationPreviewResult(BaseModel):
+    """Non-persisted whole-trip proposal plus its compare-and-apply snapshot."""
+
+    model_config = ConfigDict(frozen=True)
+
+    starting_assignments: tuple[TripPlanningSnapshotAssignment, ...]
+    snapshot_token: str
+    target_day_ids: tuple[int | None, ...]
+    allocation: TripAllocationResult
+    totals: TripPlanningTotals | None = None
+
+
+class TripOptimizationApplyRequest(BaseModel):
+    """The exact snapshot returned by a whole-trip preview."""
+
+    starting_assignments: tuple[TripPlanningSnapshotAssignment, ...]
+    snapshot_token: str = Field(min_length=1)
+
+    @field_validator("starting_assignments")
+    @classmethod
+    def _require_unique_item_ids(
+        cls, assignments: tuple[TripPlanningSnapshotAssignment, ...]
+    ) -> tuple[TripPlanningSnapshotAssignment, ...]:
+        item_ids = tuple(assignment.item_id for assignment in assignments)
+        if len(item_ids) != len(set(item_ids)):
+            raise ValueError("starting_assignments must not contain duplicate item IDs")
+        return assignments
+
+
+class TripOptimizationApplyResult(TripOptimizationPreviewResult):
+    """A whole-trip proposal whose assignments and sequence were persisted."""
+
+    applied: bool = True
+    applied_day_ids: tuple[int, ...]
 
 
 class TripAllocator:

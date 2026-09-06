@@ -50,7 +50,10 @@
     [x] Derive an immutable calculation snapshot from saved planner settings and allocate all input POIs across the requested prospective days with the selected matrix/profile only.
     [x] Run the existing Phase 002 `TripOptimizer` for each prospective day without changing persisted days, items, sequence, settings, or public APIs.
     [x] Report coordinate-less, unavailable/unsupported, mismatched, incomplete, and distance-objective diagnostics without provider or geodesic fallback.
-[ ] SP-003-03 — Add whole-trip preview/apply APIs and planning UI. ([phase](phases/003-trip-optimization.md))
+[x] SP-003-03 — Add whole-trip preview/apply APIs and planning UI. (completed 2026-09-06; `cd backend && .venv/bin/python -m pytest`: 64 passed; `cd src && npm test -- --watch=false`: 9 passed; `cd src && npm run build` passed; `git diff --check` passed; [phase](phases/003-trip-optimization.md))
+    [x] Add authenticated non-mutating `POST /api/trips/{tripId}/optimize` and explicit `POST /api/trips/{tripId}/optimize/apply` around the existing allocator.
+    [x] Require the complete POI assignment snapshot and opaque settings/day snapshot token; recalculate on the backend and atomically create only needed days and persist POI assignment/sequence.
+    [x] Add the typed Angular whole-trip client with Preview, Apply, Cancel, matrix diagnostics, and reload after a successful apply.
 [ ] SP-003-04 — Verify multi-day allocation, endpoints, and persistence. ([phase](phases/003-trip-optimization.md))
 
 ## Phase 004 — Time budget
