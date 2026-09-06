@@ -2,11 +2,11 @@
 
 ## Current phase
 
-Phase 002 — Optimize one day
+Phase 002 — Optimize one day (complete)
 
 ## Goal
 
-Implement deterministic single-day order/cost calculation using the persisted `TripItem.sequence` and Phase 001 matrix capability.
+Phase 002 is verified. Do not begin Phase 003 unless explicitly requested.
 
 ## Already completed
 
@@ -27,33 +27,26 @@ Implement deterministic single-day order/cost calculation using the persisted `T
 - `SP-002-04` added `DayPlannerService` typed Angular preview/apply clients, selected-day preview costs/diagnostics/errors and explicit Apply, plus accessible manual reorder through buttons and `Alt` + arrow keys.
 - `SP-002-04` added the minimal authenticated `POST /api/trips/{tripId}/days/{dayId}/reorder` contract. It verifies the complete selected-day item set and atomically writes only that day's sequence; it never changes item time or day assignment.
 - Planner reconciliation replaces only the selected local day. `RouteManagerService` now tags/clears only day-specific route layers, assigns stable day colours, and ignores stale responses so an older route render cannot overwrite a later manual/apply rerender.
-- Full backend verification passed with 50 tests; `cd src && npm test -- --watch=false` passed 6 planner specs and `cd src && npm run build` passed (existing bundle-budget/CommonJS warnings remain).
+- `SP-002-05` verified the Phase 002 acceptance criteria and existing direct-route regression. `cd backend && .venv/bin/python -m pytest` passed 50 tests; `cd src && npm test -- --watch=false` passed 7 planner specs; `cd src && npm run build` passed; and `git diff --check` passed. Existing build bundle-budget/CommonJS warnings remain.
+- Validation fixed two confirmed UI defects: each repeated day panel now has a unique labelled heading, and an incomplete-matrix preview cannot invoke Apply.
 - Optimizer results retain every item. Coordinate-less or invalid-coordinate items stay in their original sequence positions and are returned in diagnostics; unavailable, mismatched, or incomplete matrices preserve the baseline order with no cost comparison.
-- Focused migration/API/optimizer tests and the full backend suite passed: `cd backend && .venv/bin/python -m pytest` completed with 48 passed tests; `git diff --check` passed; `cd backend && .venv/bin/python -m alembic heads` reports `c8a5b1d3e7f2`.
+- Focused migration/API/optimizer tests and the full backend suite passed; `cd backend && .venv/bin/python -m alembic heads` reports `c8a5b1d3e7f2`.
 
 ## Next task
 
-Start `SP-002-05`: validate Phase 002 regression, optimization behavior, accessibility, and existing routing/trip flows. Do not begin Phase 003.
+Phase 002 is complete. Start `SP-003-01` only with explicit direction; do not start it as continuation of this session.
 
 ## Files to read
 
 - `AGENTS.md`
+- `docs/smart-planner/NEXT_SESSION.md`
 - `docs/smart-planner/CURRENT_STATE.md`
-- `docs/smart-planner/phases/002-optimize-day.md`
 - `docs/smart-planner/TASKS.md`
-- `backend/trip/models/models.py`
-- `backend/trip/optimization/`
-- `backend/trip/routers/trips.py`
-- `src/src/app/services/day-planner.service.ts`
-- `src/src/app/components/trip/trip.component.{ts,html}`
-- `src/src/app/services/route-manager.service.ts`
+- `docs/smart-planner/phases/003-trip-optimization.md` (only after Phase 003 is authorized)
 
 ## Files likely to modify
 
-- `backend/tests/`
-- `src/src/app/components/trip/`
-- `src/src/app/services/`
-- `docs/smart-planner/{TASKS,CURRENT_STATE,NEXT_SESSION}.md`
+- Phase 003 files are not yet determined; preserve all completed Phase 002 contracts.
 
 ## Important decisions
 

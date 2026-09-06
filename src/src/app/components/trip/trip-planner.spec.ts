@@ -94,6 +94,17 @@ describe('TripComponent planner flow', () => {
     expect(component.plannerPreview()).toBeNull();
   });
 
+  it('does not apply a preview when routing diagnostics report no complete matrix', () => {
+    const component = plannerComponent();
+    component.plannerPreview.set({ ...preview, cost_comparison: null });
+    component.plannerPreviewDayId.set(day.id);
+    component.dayPlanner = { apply: jasmine.createSpy('apply') };
+
+    component.applyOptimizeDay(day);
+
+    expect(component.dayPlanner.apply).not.toHaveBeenCalled();
+  });
+
   it('persists a keyboard-equivalent manual move for this day only', () => {
     const component = plannerComponent();
     const reorderedDay = { ...day, items: [{ ...day.items[1], sequence: 0 }, { ...day.items[0], sequence: 1 }] };

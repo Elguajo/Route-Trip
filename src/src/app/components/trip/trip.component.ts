@@ -3247,7 +3247,7 @@ export class TripComponent implements AfterViewInit, OnDestroy {
   applyOptimizeDay(day: TripDay): void {
     const trip = this.trip();
     const preview = this.plannerPreviewFor(day);
-    if (!trip || trip.archived || !preview) return;
+    if (!trip || trip.archived || !preview || !preview.cost_comparison) return;
 
     this.plannerError.set(null);
     this.isPlannerApplyLoading.set(true);

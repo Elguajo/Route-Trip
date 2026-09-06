@@ -39,7 +39,7 @@
     [x] Resolve only the authenticated user's selected matrix provider and preserve matrix/coordinate diagnostics.
     [x] Require the previewed starting-order snapshot and commit the selected day's sequence atomically only after a complete calculation.
 [x] SP-002-04 — Add typed Angular client, Optimize Day UI, manual reorder, and route-summary rerendering. (completed 2026-09-06; `cd backend && .venv/bin/python -m pytest`: 50 passed; `cd src && npm test -- --watch=false`: 6 passed; `cd src && npm run build` passed; [phase](phases/002-optimize-day.md))
-[ ] SP-002-05 — Validate regression, optimization behavior, and accessibility. ([phase](phases/002-optimize-day.md))
+[x] SP-002-05 — Validate regression, optimization behavior, and accessibility. (completed 2026-09-06; `cd backend && .venv/bin/python -m pytest`: 50 passed; `cd src && npm test -- --watch=false`: 7 passed; `cd src && npm run build` passed; `git diff --check` passed; [phase](phases/002-optimize-day.md))
 
 ## Phase 003 — Trip optimization
 
