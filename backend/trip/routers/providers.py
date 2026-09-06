@@ -9,6 +9,9 @@ from ..deps import SessionDep, get_current_username
 from ..models.models import (LatitudeLongitude, ProviderBoundaries,
                              ProviderPlaceResult, RoutingQuery,
                              RoutingResponse, User)
+from ..optimization import (OSRMTableRoutingProvider, RoutingFailure,
+                            TravelMatrix, TravelMatrixCache,
+                            TravelMatrixRequest)
 from ..utils.csv import extract_takeout_urls
 from ..utils.providers import (BaseMapProvider, GoogleMapsProvider,
                                OpenStreetMapProvider, PhotonProvider)
@@ -19,6 +22,12 @@ router = APIRouter(prefix="/api/completions", tags=["completions"])
 
 
 logger = logging.getLogger(__name__)
+
+
+# Matrix results are reconstructible and must never be persisted.  Keeping this
+# adapter cache at router-process scope lets equivalent authenticated diagnostic
+# requests reuse the existing bounded TTL/LRU cache.
+_matrix_cache = TravelMatrixCache()
 
 
 def _get_user(session: SessionDep, current_user: str) -> User:
@@ -45,6 +54,14 @@ def _get_map_provider(session: SessionDep, current_user: str) -> BaseMapProvider
         return PhotonProvider()
 
     return OpenStreetMapProvider()
+
+
+def _get_matrix_provider(session: SessionDep, current_user: str) -> OSRMTableRoutingProvider:
+    """Resolve only the authenticated user's selected provider, without fallback."""
+
+    db_user = _get_user(session, current_user)
+    provider_type = getattr(db_user, "map_provider", "osm").lower()
+    return OSRMTableRoutingProvider(provider_type, cache=_matrix_cache)
 
 
 def _merge_kmz_result(
@@ -195,6 +212,18 @@ async def get_route(
         raise HTTPException(status_code=400, detail="Coordinates required")
     provider = _get_map_provider(session, current_user)
     return await provider.get_route(data)
+
+
+@router.post("/matrix", response_model=TravelMatrix | RoutingFailure)
+async def get_travel_matrix(
+    data: TravelMatrixRequest,
+    session: SessionDep,
+    current_user: Annotated[str, Depends(get_current_username)],
+) -> TravelMatrix | RoutingFailure:
+    """Return a matrix for the caller's selected provider without storing data."""
+
+    provider = _get_matrix_provider(session, current_user)
+    return await provider.get_matrix(data.snapshot(), data.profile)
 
 
 #####
