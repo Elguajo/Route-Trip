@@ -545,7 +545,7 @@ def process_backup_import(
                                 )
                                 attachment_links_to_add.append(link)
 
-                    for item in day.get("items", []):
+                    for sequence, item in enumerate(day.get("items", [])):
                         if item.get("paid_by"):
                             u = item.get("paid_by")
                             db_user = session.get(User, u)
@@ -568,6 +568,7 @@ def process_backup_import(
                             }
                         }
                         item_data["day_id"] = new_day.id
+                        item_data.setdefault("sequence", sequence)
 
                         place = item.get("place")
                         if place and (place_id := place.get("id")):
@@ -907,13 +908,14 @@ def process_legacy_import(
                 session.add(new_day)
                 session.flush()
 
-                for item in day.get("items", []):
+                for sequence, item in enumerate(day.get("items", [])):
                     item_data = {
                         key: item[key]
                         for key in item
                         if key not in {"id", "place", "place_id", "image", "image_id"}
                     }
                     item_data["day_id"] = new_day.id
+                    item_data.setdefault("sequence", sequence)
 
                     place = item.get("place")
                     if (

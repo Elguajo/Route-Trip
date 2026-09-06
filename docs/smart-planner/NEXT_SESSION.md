@@ -6,7 +6,7 @@ Phase 002 — Optimize one day
 
 ## Goal
 
-Add explicit `TripItem` sequence with a compatible migration/backfill before implementing day-order optimization.
+Implement deterministic single-day order/cost calculation using the persisted `TripItem.sequence` and Phase 001 matrix capability.
 
 ## Already completed
 
@@ -18,12 +18,18 @@ Add explicit `TripItem` sequence with a compatible migration/backfill before imp
 - OSM and Photon explicitly advertise matrix support for `car`, `foot`, and `bike`; Google has no matrix capability. The resolver does not substitute providers or calculate straight-line values.
 - `SP-001-03` added `OSRMTableRoutingProvider` for OSM/Photon and `TravelMatrixCache`, a bounded TTL/LRU process-local cache. The adapter requests only OSRM Table, preserves null no-route cells, defensively copies cached results, and returns typed routing failures for timeout, HTTP, and malformed responses.
 - `SP-001-04` added authenticated `POST /api/completions/matrix`. The endpoint derives the routing provider solely from the authenticated user's selected map provider, shares the process-local matrix cache, writes no data, and returns either a complete matrix or a typed failure. OSM/Photon support `car`/`foot`/`bike`; Google and `transit` return explicit unsupported failures.
-- `BaseMapProvider` and `POST /api/completions/route` are unchanged. No database schema has changed.
+- `BaseMapProvider` and `POST /api/completions/route` are unchanged; Phase 001 introduced no database schema changes.
 - `SP-001-05` verified all Phase 001 acceptance criteria. `cd backend && .venv/bin/python -m pip install -r requirements-test.txt && .venv/bin/python -m pytest` completed with 31 passed tests; the suite includes an authenticated public direct-route regression and verifies unsupported matrix selections perform no HTTP fallback.
+- `SP-002-01` added non-null `TripItem.sequence`, serialized it in full and shared trip reads, and assigned it for normal creation and cross-day moves. Both backup import paths preserve a supplied sequence and deterministically assign one to older imports that lack it.
+- Alembic revision `c8a5b1d3e7f2` adds the field without rebuilding `tripitem`, then backfills each day in the existing database's `time`/`id` order. Existing responses still display items by `time` with an `id` tie-breaker.
+- `SP-002-02` added `TripOptimizer`, a backend-only, non-mutating single-day calculator. It derives baseline order from `TripItem.sequence`/`id`, calls only the supplied `RoutingProvider` matrix capability, and applies deterministic nearest-neighbour with local improvement.
+- `SP-002-03` added authenticated `POST /api/trips/{tripId}/optimize-day/{dayId}` preview and `POST /api/trips/{tripId}/optimize-day/{dayId}/apply` endpoints. Preview writes nothing; apply requires the preview starting-order snapshot, reruns the selected user's matrix-backed calculation, and atomically updates only that day's sequence after a complete result.
+- Optimizer results retain every item. Coordinate-less or invalid-coordinate items stay in their original sequence positions and are returned in diagnostics; unavailable, mismatched, or incomplete matrices preserve the baseline order with no cost comparison.
+- Focused migration/API/optimizer tests and the full backend suite passed: `cd backend && .venv/bin/python -m pytest` completed with 48 passed tests; `git diff --check` passed; `cd backend && .venv/bin/python -m alembic heads` reports `c8a5b1d3e7f2`.
 
 ## Next task
 
-Start `SP-002-01`: inspect `phases/002-optimize-day.md` and the current `TripItem` persistence/read paths, then add an explicit sequence with migration/backfill. Preserve existing time ordering and do not begin optimizer, preview/apply API, or frontend work in this task.
+Start `SP-002-04`: add the typed Angular client, Optimize Day UI, accessible manual reorder, and day-specific route-summary rerendering. Reuse the preview/apply API contracts; preserve time/id display outside the explicit planner flow. Do not begin Phase 003.
 
 ## Files to read
 
@@ -32,15 +38,15 @@ Start `SP-002-01`: inspect `phases/002-optimize-day.md` and the current `TripIte
 - `docs/smart-planner/phases/002-optimize-day.md`
 - `docs/smart-planner/TASKS.md`
 - `backend/trip/models/models.py`
+- `backend/trip/optimization/`
 - `backend/trip/routers/trips.py`
-- `backend/alembic/versions/`
 
 ## Files likely to modify
 
-- `backend/trip/models/models.py`
+- `backend/trip/optimization/`
 - `backend/trip/routers/trips.py`
-- `backend/alembic/versions/`
 - `backend/tests/`
+- `src/`
 - `docs/smart-planner/{TASKS,CURRENT_STATE,NEXT_SESSION}.md`
 
 ## Important decisions
@@ -49,8 +55,10 @@ Start `SP-002-01`: inspect `phases/002-optimize-day.md` and the current `TripIte
 - Matrix capability is a distinct protocol; no direct OSRM dependency in optimizer code.
 - Do not silently fall back across selected routing providers.
 - `TravelMatrix` preserves the provider/profile and exact immutable coordinate snapshot; `None` cells mean no route, never an air-distance estimate.
-- Add persistent sequence only in Phase 002; Phase 001 has no business-data migration.
+- `TripItem.sequence` is persisted and serialized, but it is not client-writable in SP-002-01. Existing display remains ordered by `time`/`id`; later planner APIs may explicitly apply sequence ordering without reusing time as route order.
 - The matrix API is a diagnostic/preflight boundary rather than an optimizer API: it uses a caller's authenticated, user-owned provider setting and returns the existing typed matrix result union. It never accepts a provider override.
+- The day calculator does not use partial matrix data: an unreachable pair, snapshot mismatch, or typed matrix failure returns the persisted baseline order and diagnostics without a cost comparison. Coordinate-less items remain at their persisted positions and are not silently included in route cost.
+- Apply is an explicit compare-and-apply contract: the client returns preview `starting_item_ids`; the server checks that exact sequence order, recalculates rather than trusting a client-supplied optimized order, and commits only a full calculation for the selected day. Stale, malformed, unavailable, incomplete, or mismatched calculations leave all sequences untouched.
 
 ## Blockers
 
@@ -58,6 +66,6 @@ None.
 
 ## Validation commands
 
-- `cd backend && .venv/bin/python -m pip install -r requirements-test.txt && .venv/bin/python -m pytest` (create the ignored local environment once with `python3 -m venv .venv`; 31 passed on 2026-09-06)
+- `cd backend && .venv/bin/python -m pip install -r requirements-test.txt && .venv/bin/python -m pytest` (create the ignored local environment once with `python3 -m venv .venv`; 34 passed on 2026-09-06)
 - `cd src && npm run build`
 - `git diff --check`

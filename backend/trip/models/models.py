@@ -748,7 +748,7 @@ class TripDay(TripDayBase, table=True):
 
     items: list["TripItem"] = Relationship(
         back_populates="day",
-        sa_relationship_kwargs={"order_by": "TripItem.time"},
+        sa_relationship_kwargs={"order_by": "TripItem.time, TripItem.id"},
         cascade_delete=True,
     )
     bookings: list["TripBooking"] = Relationship(back_populates="day", cascade_delete=True)
@@ -863,6 +863,7 @@ class TripItemBase(SQLModel):
 
 class TripItem(TripItemBase, table=True):
     id: int | None = Field(default=None, primary_key=True)
+    sequence: int = Field(default=0, nullable=False)
     links: list[str | LinkItem] | None = Field(default=None, sa_column=Column(LinksJSON))
 
     place_id: int | None = Field(default=None, foreign_key="place.id", ondelete="SET NULL")
@@ -911,6 +912,7 @@ class TripItemUpdate(TripItemBase):
 
 class TripItemRead(TripItemBase):
     id: int
+    sequence: int
     place: PlaceRead | None
     day_id: int
     status: TripItemStatusEnum | None
@@ -925,6 +927,7 @@ class TripItemRead(TripItemBase):
     def serialize(cls, obj: TripItem) -> "TripItemRead":
         return cls(
             id=obj.id,
+            sequence=obj.sequence,
             time=obj.time,
             text=obj.text,
             comment=obj.comment,
@@ -973,6 +976,7 @@ class TripShare(SQLModel, table=True):
 
 class TripShareItemRead(TripItemBase):
     id: int
+    sequence: int
     place: PlaceRead | None
     day_id: int
     status: TripItemStatusEnum | None
@@ -985,6 +989,7 @@ class TripShareItemRead(TripItemBase):
     def serialize(cls, obj: TripItem) -> "TripShareItemRead":
         return cls(
             id=obj.id,
+            sequence=obj.sequence,
             time=obj.time,
             text=obj.text,
             comment=obj.comment,

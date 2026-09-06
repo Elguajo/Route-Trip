@@ -26,9 +26,18 @@
 
 ## Phase 002 — Optimize one day
 
-[ ] SP-002-01 — Add explicit `TripItem` sequence with migration/backfill. ([phase](phases/002-optimize-day.md))
-[ ] SP-002-02 — Implement deterministic day ordering and cost comparison. ([phase](phases/002-optimize-day.md))
-[ ] SP-002-03 — Add preview/apply optimize-day APIs and transactional persistence. ([phase](phases/002-optimize-day.md))
+[x] SP-002-01 — Add explicit `TripItem` sequence with migration/backfill. (completed 2026-09-06; `backend/.venv/bin/python -m pytest`: 34 passed; [phase](phases/002-optimize-day.md))
+    [x] Backfill each existing day deterministically by current `time`/`id` order and require a non-null sequence.
+    [x] Serialize the field while preserving the existing time-ordered day display and import compatibility.
+[x] SP-002-02 — Implement deterministic day ordering and cost comparison. (completed 2026-09-06; `backend/.venv/bin/python -m pytest`: 39 passed; [phase](phases/002-optimize-day.md))
+    [x] Derive the starting order from persisted `TripItem.sequence` with an `id` tie-breaker.
+    [x] Calculate deterministic nearest-neighbour plus local improvement exclusively through `RoutingProvider` matrices.
+    [x] Return matrix-backed before/after duration and distance costs without mutating items, days, or sequence.
+    [x] Preserve coordinate-less items in the proposed order and diagnostics; retain the starting order without a comparison for unavailable or incomplete matrices.
+[x] SP-002-03 — Add preview/apply optimize-day APIs and transactional persistence. (completed 2026-09-06; `backend/.venv/bin/python -m pytest`: 48 passed; [phase](phases/002-optimize-day.md))
+    [x] Add authenticated preview and explicit apply endpoints scoped to one accessible day of one trip.
+    [x] Resolve only the authenticated user's selected matrix provider and preserve matrix/coordinate diagnostics.
+    [x] Require the previewed starting-order snapshot and commit the selected day's sequence atomically only after a complete calculation.
 [ ] SP-002-04 — Add typed Angular client, Optimize Day UI, manual reorder, and route-summary rerendering. ([phase](phases/002-optimize-day.md))
 [ ] SP-002-05 — Validate regression, optimization behavior, and accessibility. ([phase](phases/002-optimize-day.md))
 

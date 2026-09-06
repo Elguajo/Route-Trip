@@ -36,6 +36,11 @@ from ..models.models import (Image, ItemImageInput,
                              TripPackingListUpdate, TripRead, TripReadBase,
                              TripShare, TripShareCreate, TripShareDetails,
                              TripShareRead, TripUpdate, User)
+from ..optimization import (DayItemSnapshot, DayOptimizationApplyRequest,
+                            DayOptimizationApplyResult,
+                            DayOptimizationPreviewRequest,
+                            DayOptimizationResult, OSRMTableRoutingProvider,
+                            TravelMatrixCache, TripOptimizer)
 from ..utils.date import dt_utc
 from ..utils.ical import build_trip_ics, ics_filename
 from ..utils.link_titles import resolve_links
@@ -45,6 +50,47 @@ from ..utils.utils import (attachments_trip_folder_path, b64img_decode,
 from ..utils.zip import zip_trip_attachments
 
 router = APIRouter(prefix="/api/trips", tags=["trips"])
+
+
+# Planner results are derived from the persisted day snapshot and are never
+# stored. Reusing a bounded process-local cache avoids duplicate Table calls
+# without introducing a provider fallback or a database cache.
+_day_matrix_cache = TravelMatrixCache()
+
+
+def _next_trip_item_sequence(session: SessionDep, day_id: int) -> int:
+    latest_sequence = session.exec(
+        select(TripItem.sequence)
+        .where(TripItem.day_id == day_id)
+        .order_by(TripItem.sequence.desc())
+        .limit(1)
+    ).first()
+    return latest_sequence + 1 if latest_sequence is not None else 0
+
+
+def _get_trip_day_or_404(session: SessionDep, trip_id: int, day_id: int) -> TripDay:
+    day = session.get(TripDay, day_id)
+    if not day or day.trip_id != trip_id:
+        raise HTTPException(status_code=404, detail="Not found")
+    return day
+
+
+def _ordered_day_items(session: SessionDep, day_id: int) -> list[TripItem]:
+    return list(
+        session.exec(
+            select(TripItem)
+            .where(TripItem.day_id == day_id)
+            .order_by(TripItem.sequence, TripItem.id)
+        )
+    )
+
+
+def _day_optimizer_for_user(session: SessionDep, current_user: str) -> TripOptimizer:
+    user = session.get(User, current_user)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    provider = OSRMTableRoutingProvider(user.map_provider.value, cache=_day_matrix_cache)
+    return TripOptimizer(provider)
 
 
 def _trip_from_token_or_404(session, token: str) -> TripShare:
@@ -437,6 +483,69 @@ def get_trip_balance(
     }
 
 
+@router.post("/{trip_id}/optimize-day/{day_id}", response_model=DayOptimizationResult)
+async def preview_optimize_day(
+    data: DayOptimizationPreviewRequest,
+    trip_id: int,
+    day_id: int,
+    session: SessionDep,
+    current_user: Annotated[str, Depends(get_current_username)],
+) -> DayOptimizationResult:
+    """Calculate one accessible day's order without changing its persisted sequence."""
+
+    _get_verified_trip(session, trip_id, current_user)
+    _get_trip_day_or_404(session, trip_id, day_id)
+    items = _ordered_day_items(session, day_id)
+    return await _day_optimizer_for_user(session, current_user).optimize_day(
+        DayItemSnapshot.from_trip_items(items), data.profile
+    )
+
+
+@router.post(
+    "/{trip_id}/optimize-day/{day_id}/apply",
+    response_model=DayOptimizationApplyResult,
+)
+async def apply_optimize_day(
+    data: DayOptimizationApplyRequest,
+    trip_id: int,
+    day_id: int,
+    session: SessionDep,
+    current_user: Annotated[str, Depends(get_current_username)],
+) -> DayOptimizationApplyResult:
+    """Recalculate and atomically persist one previously previewed day order."""
+
+    trip = _get_verified_trip(session, trip_id, current_user)
+    if trip.archived:
+        raise HTTPException(status_code=400, detail="Bad request")
+    _get_trip_day_or_404(session, trip_id, day_id)
+    items = _ordered_day_items(session, day_id)
+    starting_item_ids = tuple(item.id for item in items)
+    if starting_item_ids != data.starting_item_ids:
+        raise HTTPException(status_code=409, detail="Day itinerary changed; preview it again before applying")
+
+    result = await _day_optimizer_for_user(session, current_user).optimize_day(
+        DayItemSnapshot.from_trip_items(items), data.profile
+    )
+    if result.cost_comparison is None:
+        raise HTTPException(status_code=422, detail="Day cannot be optimized with the current routing matrix")
+    if result.starting_item_ids != starting_item_ids or set(result.optimized_item_ids) != set(starting_item_ids):
+        raise HTTPException(status_code=422, detail="Invalid optimization result")
+
+    try:
+        for sequence, item_id in enumerate(result.optimized_item_ids):
+            session.exec(
+                update(TripItem)
+                .where(TripItem.id == item_id, TripItem.day_id == day_id)
+                .values(sequence=sequence)
+            )
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise HTTPException(status_code=500, detail="Failed to apply day optimization")
+
+    return DayOptimizationApplyResult(**result.model_dump())
+
+
 @router.post("/{trip_id}/days", response_model=TripDayRead)
 def create_tripday(
     td: TripDayBase,
@@ -574,6 +683,7 @@ async def create_tripitem(
         status=item.status,
         gpx=item.gpx,
         links=links,
+        sequence=_next_trip_item_sequence(session, day_id),
     )
 
     if item.place is not None:
@@ -668,7 +778,9 @@ async def update_tripitem(
         new_day = session.get(TripDay, new_day_id)
         if not new_day or new_day.trip_id != trip_id:
             raise HTTPException(status_code=400, detail="Bad request")
-        db_item.day_id = new_day_id
+        if new_day_id != db_item.day_id:
+            db_item.sequence = _next_trip_item_sequence(session, new_day_id)
+            db_item.day_id = new_day_id
 
     if "paid_by" in item_data:
         paid_by = item_data.pop("paid_by")

@@ -1,6 +1,18 @@
 """Provider-neutral travel-matrix contracts for Smart Planner."""
 
 from .cache import TravelMatrixCache
+from .day_optimizer import (
+    DayOptimizationApplyRequest,
+    DayOptimizationApplyResult,
+    DayCostComparison,
+    DayItemSnapshot,
+    DayOptimizationDiagnostic,
+    DayOptimizationDiagnosticKind,
+    DayOptimizationPreviewRequest,
+    DayOptimizationResult,
+    DayRouteCost,
+    TripOptimizer,
+)
 from .osrm_table import OSRMTableRoutingProvider
 from .routing import (
     CoordinateSnapshot,
@@ -19,6 +31,15 @@ from .routing import (
 
 __all__ = [
     "CoordinateSnapshot",
+    "DayOptimizationApplyRequest",
+    "DayOptimizationApplyResult",
+    "DayCostComparison",
+    "DayItemSnapshot",
+    "DayOptimizationDiagnostic",
+    "DayOptimizationDiagnosticKind",
+    "DayOptimizationPreviewRequest",
+    "DayOptimizationResult",
+    "DayRouteCost",
     "OSRMTableRoutingProvider",
     "RoutingCapability",
     "RoutingFailure",
@@ -30,6 +51,7 @@ __all__ = [
     "TravelMatrix",
     "TravelMatrixRequest",
     "TravelMatrixResult",
+    "TripOptimizer",
     "get_routing_capability",
     "unsupported_matrix_failure",
 ]
