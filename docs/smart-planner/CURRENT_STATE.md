@@ -21,21 +21,24 @@ _Observed on 2026-09-06; this file reports implementation, not the roadmap._
 - Optimizer results return every item ID, a matrix-backed before/after travel-cost comparison, and diagnostics. Items without valid coordinates remain at their original sequence positions and are explicitly reported; they are excluded from the matrix cost. A provider failure, matrix-snapshot mismatch, or any unreachable matrix pair preserves the starting order and returns no comparison.
 - `POST /api/trips/{tripId}/optimize-day/{dayId}` previews the authenticated user's accessible existing day without mutating it. It resolves the matrix adapter only from that user's selected map provider and returns the existing deterministic order, cost comparison, and diagnostics.
 - `POST /api/trips/{tripId}/optimize-day/{dayId}/apply` requires the preview's `starting_item_ids` snapshot, recalculates on the backend, and commits a new contiguous sequence only for the selected day. It rejects stale snapshots and any unavailable, incomplete, or mismatched matrix before writing; a persistence failure rolls back the whole day update.
+- The Angular `DayPlannerService` provides typed preview/apply clients and a scoped manual-reorder client. The selected-day panel shows preview costs, diagnostics, explicit Apply, actionable errors, and a manual sequence list with buttons plus `Alt` + arrow-key movement.
+- `POST /api/trips/{tripId}/days/{dayId}/reorder` atomically accepts the complete unique item-ID set for that accessible non-archived day and updates only its `sequence`. It rejects missing or cross-day IDs and never changes `time` or an item's day.
+- Planner Apply and manual reorder reconcile only the selected local day. `RouteManagerService` replaces only that day's tagged layers, retains all other route layers, uses a stable day colour, and suppresses stale route responses; its selected-day summary is recalculated in persisted sequence order.
 
 ## Partially implemented
 
-- Routing profiles in frontend type definitions and `RouteManagerService` expose only `car` and `foot`; backend OSM/Photon already accept `bike`.
+- Existing direct-route UI and `RouteManagerService` profiles expose `car` and `foot`; the planner's typed client additionally offers backend-supported `bike`.
 - Day routing draws independent real route legs and metrics on the map, but does not persist them or produce an itinerary summary.
 - Existing selected map provider controls direct route calculation. The matrix endpoint is separate and does not change the direct-route contract.
 
 ## Not implemented
 
-- Automatic day order UI, whole-trip allocation/clustering, manual reorder, or optimisation score.
-- Drag-and-drop/manual reorder.
+- Whole-trip allocation/clustering or optimisation score.
+- Drag-and-drop (button and keyboard reorder are implemented).
 - Trip/day planner settings, start/end locations, time budgets, route segments, or persisted optimisation summaries.
 - Live travel mode, visit statuses (`planned`/`next`/`visited`/`skipped`), remaining-route optimization, or location watch/debounce.
 - Opening-hours, fixed events, locks, priorities, breaks, and transit matrix integration.
-- Broad backend automated coverage and frontend component tests (only Angular test configuration is present). A focused backend routing test baseline now exists.
+- Broad backend automated coverage. Focused planner frontend tests now cover preview, Apply, diagnostics/errors, keyboard manual reorder, and selected-day route rerendering.
 
 ## Known issues
 
@@ -45,8 +48,8 @@ _Observed on 2026-09-06; this file reports implementation, not the roadmap._
 
 ## Tests status
 
-- `cd backend && python -m pytest` could not start on 2026-09-06 because this shell has no `python` executable. An isolated `backend/.venv` was created with Python 3.12.10; after `cd backend && .venv/bin/python -m pip install -r requirements-test.txt`, `cd backend && .venv/bin/python -m pytest` passed: 48 tests. Coverage includes direct `POST /api/completions/route` compatibility; OSRM Table success/no-route/malformed/HTTP/timeout; cache and OSM/Photon capability tests; matrix API authentication, selected-provider isolation, supported/unsupported profiles with no HTTP fallback, typed routing failure, and no-mutation coverage; `TripItem.sequence` migration/backfill, API serialization, time-order compatibility, and cross-day move behavior; deterministic one-day ordering, cost comparison, unavailable/incomplete matrices, optional distances, and coordinate-less POIs; and optimize-day API authorization, trip/day ownership, preview non-mutation, selected-provider isolation, explicit snapshot-checked apply, incomplete/unavailable matrix preservation, and transactional rollback.
-- Frontend supports `npm run build` and `npm test` through Angular CLI; neither was run in this backend-test setup session.
+- `cd backend && python -m pytest` could not start on 2026-09-06 because this shell has no `python` executable. An isolated `backend/.venv` was created with Python 3.12.10; `cd backend && .venv/bin/python -m pytest` now passes 50 tests, including scoped manual-reorder success and invalid-snapshot preservation.
+- `cd src && npm run build` passed on 2026-09-06 (with pre-existing bundle-budget/CommonJS warnings). `cd src && npm test -- --watch=false` now runs the configured Karma/Jasmine target and passed 6 focused planner specs in Chrome.
 - The focused backend test command is recorded in `TEST_PLAN.md`; the production dependency manifest remains unchanged.
 
 ## Database state
@@ -56,4 +59,4 @@ _Observed on 2026-09-06; this file reports implementation, not the roadmap._
 
 ## Current active phase
 
-Phase 001 — Routing foundation is complete. Phase 002 — Optimize one day is active: `SP-002-01` persisted and backfilled `TripItem.sequence` without changing the existing time-ordered display, `SP-002-02` added deterministic non-mutating order/cost calculation, and `SP-002-03` exposes preview/apply APIs with atomic selected-day persistence. Frontend and manual reorder work do not exist yet.
+Phase 001 — Routing foundation is complete. Phase 002 — Optimize one day is active: `SP-002-01` persisted and backfilled `TripItem.sequence` without changing the existing time-ordered display, `SP-002-02` added deterministic non-mutating order/cost calculation, `SP-002-03` exposes preview/apply APIs with atomic selected-day persistence, and `SP-002-04` added the typed planner client, visible preview/apply flow, accessible manual order, and selected-day route replacement.

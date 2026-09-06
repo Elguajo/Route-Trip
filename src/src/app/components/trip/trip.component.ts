@@ -91,6 +91,8 @@ import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
 import { LinkChipComponent } from '../../shared/link-chip/link-chip.component';
 import { ItemGalleryComponent } from '../../shared/item-gallery/item-gallery.component';
 import { TripSkeletonComponent } from '../../shared/trip-skeleton/trip-skeleton.component';
+import { DayPlannerService } from '../../services/day-planner.service';
+import { DayOptimizationResult, PlannerRoutingProfile } from '../../types/planner';
 
 const HIGHLIGHT_COLORS = [
   '#e6194b',
@@ -107,6 +109,12 @@ const HIGHLIGHT_COLORS = [
   '#856e93',
   '#7a7a00',
 ];
+
+interface DayRouteSummary {
+  distance: number;
+  duration: number;
+  failed: boolean;
+}
 
 @Component({
   selector: 'app-trip',
@@ -164,6 +172,7 @@ export class TripComponent implements AfterViewInit, OnDestroy {
   utilsService: UtilsService;
   clipboard: Clipboard;
   routeManager: RouteManagerService;
+  dayPlanner: DayPlannerService;
   changeDetectionRef: ChangeDetectorRef;
   translocoService: TranslocoService;
   mapService: TripMapService;
@@ -197,6 +206,15 @@ export class TripComponent implements AfterViewInit, OnDestroy {
   selectedItemIds = signal<Set<number>>(new Set());
   selectedDay = signal<TripDay | null>(null);
   isTextAndPlaceToggled = signal<boolean>(false);
+  plannerPreview = signal<DayOptimizationResult | null>(null);
+  plannerPreviewDayId = signal<number | null>(null);
+  plannerError = signal<string | null>(null);
+  isPlannerPreviewLoading = signal(false);
+  isPlannerApplyLoading = signal(false);
+  isPlannerReorderLoading = signal(false);
+  dayRouteSummaries = signal<Map<number, DayRouteSummary>>(new Map());
+  plannerProfile: PlannerRoutingProfile = 'car';
+  private readonly dayRouteRuns = new Map<number, number>();
 
   panelWidth = signal<number | null>(null);
   panelDeltaX = 0;
@@ -487,6 +505,7 @@ export class TripComponent implements AfterViewInit, OnDestroy {
     this.utilsService = inject(UtilsService);
     this.clipboard = inject(Clipboard);
     this.routeManager = inject(RouteManagerService);
+    this.dayPlanner = inject(DayPlannerService);
     this.changeDetectionRef = inject(ChangeDetectorRef);
     this.translocoService = inject(TranslocoService);
     this.mapService = inject(TripMapService);
@@ -3195,19 +3214,139 @@ export class TripComponent implements AfterViewInit, OnDestroy {
     });
   }
 
-  dayRouting(day: TripDay) {
+  plannerDayItems(day: TripDay): TripItem[] {
+    return [...day.items].sort((a, b) => a.sequence - b.sequence || a.id - b.id);
+  }
+
+  plannerPreviewFor(day: TripDay): DayOptimizationResult | null {
+    return this.plannerPreviewDayId() === day.id ? this.plannerPreview() : null;
+  }
+
+  previewOptimizeDay(day: TripDay): void {
+    const trip = this.trip();
+    if (!trip || trip.archived) return;
+
+    this.plannerError.set(null);
+    this.isPlannerPreviewLoading.set(true);
+    this.dayPlanner
+      .preview(trip.id, day.id, { profile: this.plannerProfile })
+      .pipe(take(1))
+      .subscribe({
+        next: (preview) => {
+          this.plannerPreview.set(preview);
+          this.plannerPreviewDayId.set(day.id);
+          this.isPlannerPreviewLoading.set(false);
+        },
+        error: (error) => {
+          this.plannerError.set(this.plannerErrorMessage(error, 'Unable to preview this day.'));
+          this.isPlannerPreviewLoading.set(false);
+        },
+      });
+  }
+
+  applyOptimizeDay(day: TripDay): void {
+    const trip = this.trip();
+    const preview = this.plannerPreviewFor(day);
+    if (!trip || trip.archived || !preview) return;
+
+    this.plannerError.set(null);
+    this.isPlannerApplyLoading.set(true);
+    this.dayPlanner
+      .apply(trip.id, day.id, { profile: this.plannerProfile, starting_item_ids: preview.starting_item_ids })
+      .pipe(take(1))
+      .subscribe({
+        next: (result) => {
+          this.replaceSelectedDayOrder(day, result.optimized_item_ids);
+          this.plannerPreview.set(null);
+          this.plannerPreviewDayId.set(null);
+          this.isPlannerApplyLoading.set(false);
+          this.utilsService.toast('success', 'Optimize Day', 'The optimized order was applied.');
+        },
+        error: (error) => {
+          this.plannerError.set(this.plannerErrorMessage(error, 'Unable to apply this preview.'));
+          this.isPlannerApplyLoading.set(false);
+        },
+      });
+  }
+
+  movePlannerItem(day: TripDay, itemId: number, direction: -1 | 1): void {
+    const trip = this.trip();
+    if (!trip || trip.archived || this.isPlannerReorderLoading()) return;
+
+    const items = this.plannerDayItems(day);
+    const currentIndex = items.findIndex((item) => item.id === itemId);
+    const targetIndex = currentIndex + direction;
+    if (currentIndex < 0 || targetIndex < 0 || targetIndex >= items.length) return;
+
+    const reordered = [...items];
+    [reordered[currentIndex], reordered[targetIndex]] = [reordered[targetIndex], reordered[currentIndex]];
+    this.plannerError.set(null);
+    this.isPlannerReorderLoading.set(true);
+    this.dayPlanner
+      .reorder(trip.id, day.id, { item_ids: reordered.map((item) => item.id) })
+      .pipe(take(1))
+      .subscribe({
+        next: (updatedDay) => {
+          this.replaceSelectedDay(updatedDay);
+          this.plannerPreview.set(null);
+          this.plannerPreviewDayId.set(null);
+          this.isPlannerReorderLoading.set(false);
+        },
+        error: (error) => {
+          this.plannerError.set(this.plannerErrorMessage(error, 'Unable to save the manual order.'));
+          this.isPlannerReorderLoading.set(false);
+        },
+      });
+  }
+
+  onPlannerItemKeydown(event: KeyboardEvent, day: TripDay, itemId: number): void {
+    if (!event.altKey || (event.key !== 'ArrowUp' && event.key !== 'ArrowDown')) return;
+    event.preventDefault();
+    this.movePlannerItem(day, itemId, event.key === 'ArrowUp' ? -1 : 1);
+  }
+
+  private replaceSelectedDayOrder(day: TripDay, itemIds: number[]): void {
+    const itemsById = new Map(day.items.map((item) => [item.id, item]));
+    const orderedItems = itemIds.map((itemId, sequence) => {
+      const item = itemsById.get(itemId);
+      if (!item) throw new Error('The server returned an unknown item for this day.');
+      return { ...item, sequence };
+    });
+    this.replaceSelectedDay({ ...day, items: orderedItems });
+  }
+
+  private replaceSelectedDay(updatedDay: TripDay): void {
+    this.trip.update((trip) => {
+      if (!trip) return null;
+      return { ...trip, days: trip.days.map((day) => (day.id === updatedDay.id ? updatedDay : day)) };
+    });
+    this.selectedDay.set(updatedDay);
+    this.dayRouting(updatedDay, true);
+  }
+
+  private plannerErrorMessage(error: any, fallback: string): string {
+    return error?.error?.detail || error?.message || fallback;
+  }
+
+  dayRouting(day: TripDay, usePlannerOrder = false) {
+    const routeRun = (this.dayRouteRuns.get(day.id) ?? 0) + 1;
+    this.dayRouteRuns.set(day.id, routeRun);
+    const routedItems = usePlannerOrder ? this.plannerDayItems(day) : day.items;
     const coords: [number, number][] = [];
     const markers: any[] = [];
 
-    day.items.forEach((item) => {
-      const lat = item.lat || item.place?.lat;
-      const lng = item.lng || item.place?.lng;
-      if (!lat || !lng) return;
+    routedItems.forEach((item) => {
+      const lat = item.lat ?? item.place?.lat;
+      const lng = item.lng ?? item.place?.lng;
+      if (lat == null || lng == null) return;
       coords.push([lat, lng]);
       if (!item.place) markers.push(item);
     });
 
+    this.routeManager.clearDay(day.id);
     if (coords.length < 2) {
+      this.utilsService.setLoading('');
+      if (usePlannerOrder) this.updateDayRouteSummary(day.id, { distance: 0, duration: 0, failed: false });
       this.utilsService.toast(
         'warn',
         this.translocoService.translate('routing.not_enough_values'),
@@ -3251,6 +3390,9 @@ export class TripComponent implements AfterViewInit, OnDestroy {
     });
 
     let completedRoutes = 0;
+    let totalDistance = 0;
+    let totalDuration = 0;
+    let failed = false;
     routeSegments.forEach((segment, index) => {
       const profile = this.routeManager.getProfile(segment.start, segment.end);
       this.apiService
@@ -3263,7 +3405,10 @@ export class TripComponent implements AfterViewInit, OnDestroy {
         })
         .subscribe({
           next: (resp) => {
+            if (this.dayRouteRuns.get(day.id) !== routeRun) return;
             completedRoutes++;
+            totalDistance += resp.distance ?? 0;
+            totalDuration += resp.duration ?? 0;
             this.utilsService.setLoading(
               completedRoutes === routeSegments.length
                 ? ''
@@ -3274,7 +3419,8 @@ export class TripComponent implements AfterViewInit, OnDestroy {
             );
 
             const layer = this.routeManager.addRoute({
-              id: this.routeManager.createRouteId(segment.start, segment.end, profile),
+              id: this.routeManager.createDayRouteId(day.id, segment.start, segment.end, profile),
+              dayId: day.id,
               coordinates: resp.coordinates,
               distance: resp.distance ?? 0,
               duration: resp.duration ?? 0,
@@ -3283,10 +3429,18 @@ export class TripComponent implements AfterViewInit, OnDestroy {
 
             const currentMap = this.mapService.map;
             if (currentMap) layer.addTo(currentMap);
+            if (completedRoutes === routeSegments.length) {
+              this.updateDayRouteSummary(day.id, { distance: totalDistance, duration: totalDuration, failed });
+            }
           },
           error: (err) => {
+            if (this.dayRouteRuns.get(day.id) !== routeRun) return;
             completedRoutes++;
+            failed = true;
             if (completedRoutes === routeSegments.length) this.utilsService.setLoading('');
+            if (completedRoutes === routeSegments.length) {
+              this.updateDayRouteSummary(day.id, { distance: totalDistance, duration: totalDuration, failed });
+            }
             this.utilsService.toast(
               'error',
               this.translocoService.translate('routing.error'),
@@ -3294,7 +3448,15 @@ export class TripComponent implements AfterViewInit, OnDestroy {
             );
             console.error(`Routing error for segment ${index + 1}:`, err);
           },
-        });
+      });
+    });
+  }
+
+  private updateDayRouteSummary(dayId: number, summary: DayRouteSummary): void {
+    this.dayRouteSummaries.update((summaries) => {
+      const updated = new Map(summaries);
+      updated.set(dayId, summary);
+      return updated;
     });
   }
 

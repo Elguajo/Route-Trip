@@ -40,18 +40,10 @@ export class RouteManagerService {
   }
 
   addRoute(routeData: Omit<RouteData, 'layer' | 'color'>): L.LayerGroup {
-    const { id, coordinates, distance, duration, profile } = routeData;
+    const { id, coordinates, distance, duration, profile, dayId } = routeData;
 
     if (this.routes().has(id)) this.removeRoute(id);
-    const availableColors = this.availableColors();
-    let color: string;
-    if (availableColors.length > 0) {
-      const randomIndex = Math.floor(Math.random() * availableColors.length);
-      color = availableColors[randomIndex];
-    } else {
-      const randomIndex = Math.floor(Math.random() * HIGHLIGHT_COLORS.length);
-      color = HIGHLIGHT_COLORS[randomIndex];
-    }
+    const color = dayId === undefined ? this.nextAvailableColor() : this.dayColor(dayId);
 
     const icon = this.profileIcons[profile];
     const layer = this.createRouteLayer(
@@ -84,6 +76,16 @@ export class RouteManagerService {
   clearAll(): void {
     this.routes().forEach((route) => route.layer.remove());
     this.routes.set(new Map());
+  }
+
+  clearDay(dayId: number): void {
+    Array.from(this.routes().values())
+      .filter((route) => route.dayId === dayId)
+      .forEach((route) => this.removeRoute(route.id));
+  }
+
+  createDayRouteId(dayId: number, from: L.LatLngTuple, to: L.LatLngTuple, profile: string): string {
+    return `day_${dayId}_${this.createRouteId(from, to, profile)}`;
   }
 
   getRoute(id: string): RouteData | undefined {
@@ -204,5 +206,17 @@ export class RouteManagerService {
 
   createRouteId(from: L.LatLngTuple, to: L.LatLngTuple, profile: string): string {
     return `${profile}_${from[0].toFixed(6)}-${from[1].toFixed(6)}_${to[0].toFixed(6)}-${to[1].toFixed(6)}`;
+  }
+
+  private dayColor(dayId: number): string {
+    return HIGHLIGHT_COLORS[Math.abs(dayId) % HIGHLIGHT_COLORS.length];
+  }
+
+  private nextAvailableColor(): string {
+    const availableColors = this.availableColors();
+    if (availableColors.length > 0) {
+      return availableColors[Math.floor(Math.random() * availableColors.length)];
+    }
+    return HIGHLIGHT_COLORS[Math.floor(Math.random() * HIGHLIGHT_COLORS.length)];
   }
 }

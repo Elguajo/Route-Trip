@@ -27,6 +27,7 @@ export interface RoutingQuery {
 
 export interface RouteData {
   id: string;
+  dayId?: number;
   distance: number;
   duration: number;
   coordinates: [number, number][];

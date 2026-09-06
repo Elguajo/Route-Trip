@@ -123,6 +123,19 @@ class DayOptimizationApplyRequest(DayOptimizationPreviewRequest):
         return item_ids
 
 
+class DayManualReorderRequest(BaseModel):
+    """The complete persisted order for one existing day."""
+
+    item_ids: tuple[int, ...]
+
+    @field_validator("item_ids")
+    @classmethod
+    def _require_unique_item_ids(cls, item_ids: tuple[int, ...]) -> tuple[int, ...]:
+        if len(item_ids) != len(set(item_ids)):
+            raise ValueError("item_ids must not contain duplicates")
+        return item_ids
+
+
 class DayOptimizationApplyResult(DayOptimizationResult):
     """A calculated result whose proposed sequence was persisted."""
 

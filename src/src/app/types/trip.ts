@@ -66,6 +66,7 @@ export interface TripDay {
 
 export interface TripItem {
   id: number;
+  sequence: number;
   time?: string;
   text: string;
   comment?: string;

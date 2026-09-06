@@ -36,7 +36,7 @@ from ..models.models import (Image, ItemImageInput,
                              TripPackingListUpdate, TripRead, TripReadBase,
                              TripShare, TripShareCreate, TripShareDetails,
                              TripShareRead, TripUpdate, User)
-from ..optimization import (DayItemSnapshot, DayOptimizationApplyRequest,
+from ..optimization import (DayItemSnapshot, DayManualReorderRequest, DayOptimizationApplyRequest,
                             DayOptimizationApplyResult,
                             DayOptimizationPreviewRequest,
                             DayOptimizationResult, OSRMTableRoutingProvider,
@@ -544,6 +544,40 @@ async def apply_optimize_day(
         raise HTTPException(status_code=500, detail="Failed to apply day optimization")
 
     return DayOptimizationApplyResult(**result.model_dump())
+
+
+@router.post("/{trip_id}/days/{day_id}/reorder", response_model=TripDayRead)
+def reorder_day_items(
+    data: DayManualReorderRequest,
+    trip_id: int,
+    day_id: int,
+    session: SessionDep,
+    current_user: Annotated[str, Depends(get_current_username)],
+) -> TripDayRead:
+    """Atomically persist a complete manual order for one accessible day only."""
+
+    trip = _get_verified_trip(session, trip_id, current_user)
+    if trip.archived:
+        raise HTTPException(status_code=400, detail="Bad request")
+    day = _get_trip_day_or_404(session, trip_id, day_id)
+    current_item_ids = tuple(item.id for item in _ordered_day_items(session, day_id))
+    if len(data.item_ids) != len(current_item_ids) or set(data.item_ids) != set(current_item_ids):
+        raise HTTPException(status_code=422, detail="item_ids must contain every item in this day exactly once")
+
+    try:
+        for sequence, item_id in enumerate(data.item_ids):
+            session.exec(
+                update(TripItem)
+                .where(TripItem.id == item_id, TripItem.day_id == day_id)
+                .values(sequence=sequence)
+            )
+        session.commit()
+        session.refresh(day)
+    except Exception:
+        session.rollback()
+        raise HTTPException(status_code=500, detail="Failed to reorder day")
+
+    return TripDayRead.serialize(day)
 
 
 @router.post("/{trip_id}/days", response_model=TripDayRead)

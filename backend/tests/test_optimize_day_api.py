@@ -221,6 +221,53 @@ def test_apply_is_atomic_when_persisting_a_sequence_fails(
     assert _sequences(optimize_day_api, 1) == before
 
 
+def test_manual_reorder_persists_only_the_selected_day_sequence_and_preserves_time(
+    optimize_day_api: TestClient,
+) -> None:
+    before_other_day = _sequences(optimize_day_api, 2)
+    with Session(optimize_day_api.app.state.optimize_day_engine) as session:
+        first = session.get(TripItem, 1)
+        second = session.get(TripItem, 2)
+        assert first is not None and second is not None
+        first.time = "09:00"
+        second.time = "11:00"
+        session.commit()
+
+    response = optimize_day_api.post(
+        "/api/trips/1/days/1/reorder",
+        json={"item_ids": [3, 1, 2]},
+        headers=_auth(),
+    )
+
+    assert response.status_code == 200
+    assert [item["id"] for item in response.json()["items"]] == [3, 1, 2]  # Existing time/id response order
+    assert {item["id"]: item["sequence"] for item in response.json()["items"]} == {1: 1, 2: 2, 3: 0}
+    assert _sequences(optimize_day_api, 1) == [(1, 1), (2, 2), (3, 0)]
+    assert _sequences(optimize_day_api, 2) == before_other_day
+    with Session(optimize_day_api.app.state.optimize_day_engine) as session:
+        assert session.get(TripItem, 1).time == "09:00"
+        assert session.get(TripItem, 2).time == "11:00"
+
+
+def test_manual_reorder_rejects_an_incomplete_or_foreign_day_snapshot_without_mutating(
+    optimize_day_api: TestClient,
+) -> None:
+    before_first_day = _sequences(optimize_day_api, 1)
+    before_second_day = _sequences(optimize_day_api, 2)
+
+    incomplete = optimize_day_api.post(
+        "/api/trips/1/days/1/reorder", json={"item_ids": [1, 2]}, headers=_auth()
+    )
+    foreign = optimize_day_api.post(
+        "/api/trips/1/days/1/reorder", json={"item_ids": [1, 2, 4]}, headers=_auth()
+    )
+
+    assert incomplete.status_code == 422
+    assert foreign.status_code == 422
+    assert _sequences(optimize_day_api, 1) == before_first_day
+    assert _sequences(optimize_day_api, 2) == before_second_day
+
+
 def test_preview_reports_coordinateless_items_without_dropping_them(
     optimize_day_api: TestClient, mock_routing_http
 ) -> None:

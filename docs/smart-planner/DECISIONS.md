@@ -75,3 +75,13 @@
 **Why:** The snapshot prevents applying a stale preview, while server-side recalculation keeps travel costs and provider selection authoritative. Requiring a complete calculation ensures unavailable, incomplete, or mismatched matrices cannot partially alter itinerary intent.
 
 **Alternatives considered:** Apply a client-supplied optimized order; rerun calculation without a preview snapshot; persist a partial result. Those options permit stale or unverified changes and weaken the no-fallback/no-partial-cost contract.
+
+## ADR-009 — Manual reorder has a dedicated complete-day transaction
+
+**Status:** Accepted
+
+**Decision:** Add a separate authenticated `POST /api/trips/{tripId}/days/{dayId}/reorder` contract that accepts every selected-day item ID exactly once and atomically writes contiguous `TripItem.sequence` values for that day only. Keep `TripItem.time`, day assignment, and the ordinary item-update API unchanged.
+
+**Why:** Manual ordering is a multi-row consistency operation, not an attribute edit. A full scoped snapshot prevents accidental cross-day moves or dropped items while allowing the Angular client to reconcile just the changed day and recalculate its tagged route layers.
+
+**Alternatives considered:** Make `sequence` writable on the existing item endpoint; reorder client-side without persistence; submit partial move operations. Each either permits transient/inconsistent order, blurs the time/sequence boundary, or weakens server-side day scoping.
