@@ -27,6 +27,9 @@ _Observed on 2026-09-06; this file reports implementation, not the roadmap._
 - `TripPlannerSettings` is a one-to-one, cascade-deleted trip record for requested days, optional start/end coordinates, return-to-start, allowed routing profiles, and duration/distance objective. Existing and new trips have compatible defaults: one requested day, no endpoints, no return, `car`, and duration objective.
 - Authenticated trip readers receive `planner_settings` in full and shared trip serialization. `GET`/`PUT /api/trips/{tripId}/planner-settings` reads or replaces a complete validated settings payload; it does not allocate POIs, calculate routes, or alter days/items.
 - The user backup export/import paths preserve planner settings and assign defaults for older backups that lack them.
+- `TripPlanningSettings.from_persisted()` copies a saved `TripPlannerSettings` row into an immutable calculation input. `TripAllocator` uses its first allowed profile and selected provider matrix only, deterministically clusters valid-coordinate POIs across the requested prospective days, honours start/end or return-to-start allocation anchors, and uses the saved duration/distance objective for clustering.
+- Every input POI appears exactly once in the non-persisted `TripAllocationResult`; coordinate-less POIs are assigned deterministically and explicitly diagnosed. Provider/profile failures, snapshot mismatches, incomplete matrices, and unavailable distance values return a stable balanced allocation with typed diagnostics and no provider or geodesic fallback.
+- Each prospective allocation day invokes the existing Phase 002 `TripOptimizer` for its internal order. This calculation layer adds no route, persistence, API, UI, migration, `TripDay`, `TripItem`, sequence, or settings mutation.
 
 ## Partially implemented
 
@@ -36,7 +39,7 @@ _Observed on 2026-09-06; this file reports implementation, not the roadmap._
 
 ## Not implemented
 
-- Whole-trip allocation/clustering or optimisation score.
+- Whole-trip preview/apply endpoint, transactional persistence, planner UI, and aggregate optimisation score.
 - Drag-and-drop (button and keyboard reorder are implemented).
 - Day planner settings, time budgets, route segments, or persisted optimisation summaries.
 - Live travel mode, visit statuses (`planned`/`next`/`visited`/`skipped`), remaining-route optimization, or location watch/debounce.
@@ -63,4 +66,4 @@ _Observed on 2026-09-06; this file reports implementation, not the roadmap._
 
 ## Current active phase
 
-Phase 001 — Routing foundation is complete. Phase 002 — Optimize one day is complete: `SP-002-01` persisted and backfilled `TripItem.sequence` without changing the existing time-ordered display, `SP-002-02` added deterministic non-mutating order/cost calculation, `SP-002-03` exposes preview/apply APIs with atomic selected-day persistence, `SP-002-04` added the typed planner client, visible preview/apply flow, accessible manual order, and selected-day route replacement, and `SP-002-05` verified acceptance criteria and regressions. Phase 003 is in progress: `SP-003-01` added compatible trip-level planner settings and its migration/API tests; allocation and whole-trip optimisation have not begun.
+Phase 001 — Routing foundation is complete. Phase 002 — Optimize one day is complete: `SP-002-01` persisted and backfilled `TripItem.sequence` without changing the existing time-ordered display, `SP-002-02` added deterministic non-mutating order/cost calculation, `SP-002-03` exposes preview/apply APIs with atomic selected-day persistence, `SP-002-04` added the typed planner client, visible preview/apply flow, accessible manual order, and selected-day route replacement, and `SP-002-05` verified acceptance criteria and regressions. Phase 003 is in progress: `SP-003-01` added compatible trip-level planner settings; `SP-003-02` added an isolated deterministic matrix-informed allocation and per-day order calculation. Whole-trip preview/apply and UI have not begun.

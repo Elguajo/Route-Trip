@@ -15,6 +15,15 @@ from .day_optimizer import (
     TripOptimizer,
 )
 from .osrm_table import OSRMTableRoutingProvider
+from .trip_allocator import (
+    TripAllocationDay,
+    TripAllocationDiagnostic,
+    TripAllocationDiagnosticKind,
+    TripAllocationObjective,
+    TripAllocationResult,
+    TripAllocator,
+    TripPlanningSettings,
+)
 from .routing import (
     CoordinateSnapshot,
     RoutingCapability,
@@ -53,6 +62,13 @@ __all__ = [
     "TravelMatrix",
     "TravelMatrixRequest",
     "TravelMatrixResult",
+    "TripAllocationDay",
+    "TripAllocationDiagnostic",
+    "TripAllocationDiagnosticKind",
+    "TripAllocationObjective",
+    "TripAllocationResult",
+    "TripAllocator",
+    "TripPlanningSettings",
     "TripOptimizer",
     "get_routing_capability",
     "unsupported_matrix_failure",

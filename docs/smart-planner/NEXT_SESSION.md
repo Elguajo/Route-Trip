@@ -2,11 +2,11 @@
 
 ## Current phase
 
-Phase 003 — Trip optimization (SP-003-01 complete)
+Phase 003 — Trip optimization (SP-003-01 and SP-003-02 complete)
 
 ## Goal
 
-SP-003-01 is verified. Do not begin SP-003-02 unless explicitly requested.
+SP-003-02 is verified. Do not begin SP-003-03 unless explicitly requested.
 
 ## Already completed
 
@@ -35,10 +35,13 @@ SP-003-01 is verified. Do not begin SP-003-02 unless explicitly requested.
 - Alembic revision `e4b3f14f9a2c` creates `tripplannersettings` and backfills one default row per existing trip (`requested_days=1`, no locations, `return_to_start=false`, `allowed_profiles=["car"]`, `objective="duration"`). It leaves `trip`, `tripday`, and `tripitem` unchanged; downgrade only removes the new table.
 - Full and shared trip serialization now include `planner_settings`. Authenticated `GET`/`PUT /api/trips/{tripId}/planner-settings` reads/replaces the complete validated payload; normal new-trip creation and both backup import paths create/preserve the defaults.
 - `backend/tests/test_trip_planner_settings.py` covers migration backfill/downgrade, default serialization, API write/reload persistence, new-trip defaults, and profile-list validation. `cd backend && .venv/bin/python -m pytest` passed 54 tests; `cd src && npm test -- --watch=false` passed 7 tests; `cd src && npm run build` passed with existing bundle-budget/CommonJS warnings; `git diff --check` passed; `cd backend && .venv/bin/python -m alembic heads` reports `e4b3f14f9a2c`.
+- `SP-003-02` added the isolated `TripPlanningSettings` calculation snapshot and `TripAllocator`. It copies saved settings without retaining ORM state, selects only the first persisted allowed profile, obtains one complete selected-provider matrix for prospective allocation, uses deterministic farthest-seed geographic clustering plus start/end or return-to-start anchors, and applies the saved duration/distance objective without metric fallback.
+- The allocator retains every input POI exactly once; coordinate-less POIs receive a deterministic balanced assignment and diagnostics. Unsupported/provider failures, snapshot mismatches, incomplete matrices, and missing distance data for a distance objective produce a stable balanced allocation and explicit typed diagnostics. It then calls the unchanged Phase 002 `TripOptimizer` independently for each prospective day.
+- `SP-003-02` adds no public endpoint, UI, database writes, migration, provider fallback, direct OSRM dependency, geodesic estimate, or modification of `TripDay`, `TripItem`, sequence, or settings. `backend/tests/test_trip_allocator.py` covers geographic allocation, saved profile/objective/anchors, input-order stability, coordinate-less retention, unsupported providers/no fallback, and Phase 002 per-day integration. Full validation: `cd backend && .venv/bin/python -m pytest` passed 59 tests; `cd src && npm test -- --watch=false` passed 7 tests; `cd src && npm run build` passed with existing bundle-budget/CommonJS warnings; `git diff --check` passed.
 
 ## Next task
 
-`SP-003-01` is complete. Start `SP-003-02` only with explicit direction; keep allocation and per-day orchestration isolated from `TripPlannerSettings` and preserve all Phase 001/002 contracts.
+`SP-003-02` is complete. Start `SP-003-03` only with explicit direction; add whole-trip preview/apply wiring around the existing calculation boundary without duplicating allocation/order logic, and preserve Phase 001/002 contracts.
 
 ## Files to read
 
@@ -50,10 +53,11 @@ SP-003-01 is verified. Do not begin SP-003-02 unless explicitly requested.
 - `backend/trip/models/models.py`
 - `backend/trip/routers/trips.py`
 - `backend/trip/alembic/versions/e4b3f14f9a2c_trip_planner_settings.py`
+- `backend/trip/optimization/trip_allocator.py`
 
 ## Files likely to modify
 
-- Phase 003 allocation/orchestration files are not yet determined; preserve all completed Phase 001/002 contracts and the settings API/persistence boundary.
+- `backend/trip/routers/trips.py` for the future authenticated whole-trip preview/apply boundary, plus the typed Angular planner client/UI. Keep `backend/trip/optimization/trip_allocator.py` non-persisting and provider-neutral.
 
 ## Important decisions
 
@@ -67,6 +71,7 @@ SP-003-01 is verified. Do not begin SP-003-02 unless explicitly requested.
 - Apply is an explicit compare-and-apply contract: the client returns preview `starting_item_ids`; the server checks that exact sequence order, recalculates rather than trusting a client-supplied optimized order, and commits only a full calculation for the selected day. Stale, malformed, unavailable, incomplete, or mismatched calculations leave all sequences untouched.
 - Manual reorder is a separate complete-list transaction scoped to one authorized trip/day. This prevents ordinary item updates from changing planner sequence, validates that no item is added/removed/cross-day, and lets the UI replace only that day from the backend response.
 - Planner inputs live in a defaulted one-to-one `TripPlannerSettings` record rather than `Trip` columns. The setting API replaces a complete validated snapshot; its defaults let existing trips and old backup imports keep their prior behavior until whole-trip planning is explicitly invoked.
+- Allocation copies the saved settings row into an immutable calculation snapshot and is deterministic: the first allowed profile is the sole selected profile; a complete selected-provider matrix drives duration/distance grouping; coordinate-less and non-routable cases retain every input ID in a stable balanced allocation with diagnostics. Per-day order delegates to the existing Phase 002 calculator; this layer never persists or exposes a preview/apply API.
 
 ## Blockers
 

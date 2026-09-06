@@ -95,3 +95,13 @@
 **Why:** The settings are planner-specific, optional for legacy trip behavior, and will evolve independently of core trip metadata. A separate row leaves the established `Trip` schema and create/update contract intact, gives each old trip deterministic values, and lets Phase 003 orchestration consume a single validated input snapshot without starting allocation or route computation.
 
 **Alternatives considered:** Add nullable settings columns to `Trip`; create settings only when a user first opens the planner; accept partial fields on the ordinary trip update endpoint. Those approaches either mix planner policy into a stable base model, leave legacy trips with ambiguous configuration, or weaken validation/ownership of a coherent settings payload.
+
+## ADR-011 — Allocation is an isolated, complete-matrix calculation that delegates ordering
+
+**Status:** Accepted
+
+**Decision:** Copy saved `TripPlannerSettings` into an immutable calculation snapshot, select its first allowed profile deterministically, and perform prospective multi-day grouping only from a complete matrix supplied by the already-selected routing provider. Use duration or distance exactly as selected for allocation; start/end (or return-to-start) are matrix anchors. Pass each prospective group to the existing Phase 002 `TripOptimizer` for internal order. Do not write or create `TripDay`/`TripItem`, sequence, settings, APIs, or route-provider fallbacks in this layer.
+
+**Why:** The allocation strategy needs planner policy but must remain independently testable and safe to reuse by a later preview/apply transaction. A complete matrix avoids partial or estimated clustering, while delegating per-day order preserves one source of truth for the established Phase 002 contract.
+
+**Alternatives considered:** Let allocation import and mutate ORM trip/day rows; use straight-line clustering when a matrix is unavailable; select any supported profile or provider; reimplement the day ordering heuristic. These options would blur calculation and persistence, hide routing behaviour, or fork tested ordering logic.

@@ -46,7 +46,10 @@
 [x] SP-003-01 — Add trip-level planner settings and migration. (completed 2026-09-06; `backend/.venv/bin/python -m pytest`: 54 passed; `cd src && npm test -- --watch=false`: 7 passed; `cd src && npm run build` passed; `git diff --check` passed; [phase](phases/003-trip-optimization.md))
     [x] Persist requested days, optional start/end locations, return-to-start, allowed matrix profiles, and objective through a one-to-one trip settings record.
     [x] Backfill compatible defaults for every existing trip, serialize settings, preserve backup import/export, and test migration/API persistence.
-[ ] SP-003-02 — Implement geographic allocation and per-day optimization. ([phase](phases/003-trip-optimization.md))
+[x] SP-003-02 — Implement geographic allocation and per-day optimization. (completed 2026-09-06; `cd backend && .venv/bin/python -m pytest`: 59 passed; `cd src && npm test -- --watch=false`: 7 passed; `cd src && npm run build` passed; `git diff --check` passed; [phase](phases/003-trip-optimization.md))
+    [x] Derive an immutable calculation snapshot from saved planner settings and allocate all input POIs across the requested prospective days with the selected matrix/profile only.
+    [x] Run the existing Phase 002 `TripOptimizer` for each prospective day without changing persisted days, items, sequence, settings, or public APIs.
+    [x] Report coordinate-less, unavailable/unsupported, mismatched, incomplete, and distance-objective diagnostics without provider or geodesic fallback.
 [ ] SP-003-03 — Add whole-trip preview/apply APIs and planning UI. ([phase](phases/003-trip-optimization.md))
 [ ] SP-003-04 — Verify multi-day allocation, endpoints, and persistence. ([phase](phases/003-trip-optimization.md))
 
