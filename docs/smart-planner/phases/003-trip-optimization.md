@@ -81,7 +81,7 @@ Phases 001 and 002.
 
 ## Completion checklist
 
-- [ ] Settings migration/API verified.
-- [ ] Allocation and apply tests pass.
-- [ ] UI/build/manual regression complete.
-- [ ] State/backlog/roadmap/handoff updated.
+- [x] Settings migration/API verified.
+- [x] Allocation and apply tests pass.
+- [x] UI/build/manual regression complete.
+- [x] State/backlog/roadmap/handoff updated.

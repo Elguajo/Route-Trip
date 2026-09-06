@@ -130,6 +130,21 @@ def test_whole_trip_apply_recalculates_and_persists_only_poi_assignments(
     planned_items = [item for day in reloaded.json()["days"] for item in day["items"] if item["id"] in {1, 2, 3, 4}]
     assert sorted(item["id"] for item in planned_items) == [1, 2, 3, 4]
     assert {item["day_id"] for item in planned_items} == set(body["applied_day_ids"])
+    expected_assignments = {
+        item_id: (body["target_day_ids"][day["day_index"]], sequence)
+        for day in body["allocation"]["days"]
+        for sequence, item_id in enumerate(day["optimization"]["optimized_item_ids"])
+    }
+    actual_assignments = {
+        item["id"]: (item["day_id"], item["sequence"])
+        for item in planned_items
+    }
+    # The existing day's non-POI event retains sequence 10, so planned POIs
+    # are appended after it; newly created days start at zero.
+    assert actual_assignments == {
+        item_id: (day_id, sequence + 11 if day_id == 1 else sequence)
+        for item_id, (day_id, sequence) in expected_assignments.items()
+    }
     unmanaged = next(item for day in reloaded.json()["days"] for item in day["items"] if item["id"] == 5)
     assert unmanaged["day_id"] == 1
     assert unmanaged["sequence"] == 10
@@ -160,6 +175,43 @@ def test_whole_trip_apply_rejects_a_stale_snapshot_without_mutating(
     assert response.status_code == 409
     assert changed != before
     assert _assignments(optimize_trip_api) == changed
+
+
+@pytest.mark.parametrize("changed_input", ("poi", "planner_settings", "routing_provider"))
+def test_whole_trip_apply_rejects_any_changed_planning_input_without_mutating(
+    optimize_trip_api: TestClient, mock_routing_http, changed_input: str
+) -> None:
+    mock_routing_http(_matrix_response)
+    preview = _preview(optimize_trip_api)
+    assert preview.status_code == 200
+    before = _assignments(optimize_trip_api)
+
+    with Session(optimize_trip_api.app.state.optimize_trip_engine) as session:
+        if changed_input == "poi":
+            place = session.get(Place, 1)
+            assert place is not None
+            place.lat = 2.0
+        elif changed_input == "planner_settings":
+            settings = session.get(TripPlannerSettings, 1)
+            assert settings is not None
+            settings.requested_days = 3
+        else:
+            user = session.get(User, "owner")
+            assert user is not None
+            user.map_provider = MapProvider.GOOGLE
+        session.commit()
+
+    response = optimize_trip_api.post(
+        "/api/trips/1/optimize/apply",
+        json={
+            "starting_assignments": preview.json()["starting_assignments"],
+            "snapshot_token": preview.json()["snapshot_token"],
+        },
+        headers=_auth(),
+    )
+
+    assert response.status_code == 409
+    assert _assignments(optimize_trip_api) == before
 
 
 def test_whole_trip_preview_reports_invalid_coordinates_without_dropping_the_poi(

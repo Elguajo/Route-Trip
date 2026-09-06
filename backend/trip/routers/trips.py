@@ -160,14 +160,22 @@ def _planning_assignments(items: list[TripItem]) -> tuple[TripPlanningSnapshotAs
 def _planning_snapshot_token(
     settings: TripPlanningSettings,
     assignments: tuple[TripPlanningSnapshotAssignment, ...],
+    item_snapshots: tuple[DayItemSnapshot, ...],
     target_day_ids: tuple[int | None, ...],
     routing_provider: str,
 ) -> str:
-    """Bind apply to every persisted input that can change this proposal."""
+    """Bind apply to every persisted input that can change this proposal.
+
+    Assignments alone do not describe a POI's routing input: its coordinates
+    can change through the linked ``Place`` while the ``TripItem`` remains in
+    the same day and sequence.  Include the resolved immutable item snapshots
+    so a preview cannot apply an allocation calculated from stale POI data.
+    """
 
     payload = {
         "settings": settings.model_dump(mode="json"),
         "assignments": [assignment.model_dump(mode="json") for assignment in assignments],
+        "item_snapshots": [item.model_dump(mode="json") for item in item_snapshots],
         "target_day_ids": target_day_ids,
         "routing_provider": routing_provider,
     }
@@ -199,19 +207,20 @@ async def _whole_trip_preview(
         raise HTTPException(status_code=404, detail="User not found")
     items = _eligible_trip_planning_items(session, trip_id)
     assignments = _planning_assignments(items)
+    item_snapshots = _planning_item_snapshots(items)
     existing_day_ids = tuple(day.id for day in _ordered_trip_days(session, trip_id))
     target_day_ids = tuple(
         existing_day_ids[index] if index < len(existing_day_ids) else None
         for index in range(settings.requested_days)
     )
     allocation = await _trip_allocator_for_user(session, current_user).allocate(
-        settings, _planning_item_snapshots(items)
+        settings, item_snapshots
     )
     return (
         TripOptimizationPreviewResult(
             starting_assignments=assignments,
             snapshot_token=_planning_snapshot_token(
-                settings, assignments, target_day_ids, user.map_provider.value
+                settings, assignments, item_snapshots, target_day_ids, user.map_provider.value
             ),
             target_day_ids=target_day_ids,
             allocation=allocation,

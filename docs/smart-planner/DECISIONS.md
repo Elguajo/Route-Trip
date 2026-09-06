@@ -115,3 +115,13 @@
 **Why:** The compare-and-apply boundary must reject stale assignments and settings rather than silently applying a newly recalculated plan the user never reviewed. POI allocation also cannot disturb bookings, notes, or generic itinerary entries that are outside the Phase 003 POI policy. Keeping those rows untouched gives a clear diagnostic policy while retaining every eligible POI, including coordinate-less ones.
 
 **Alternatives considered:** Accept only an item-ID list; trust a client-supplied proposed allocation; apply the newest settings without invalidating the preview; resequence or move every item in a target day. These weaken stale protection, duplicate backend authority, or modify unrelated itinerary data.
+
+## ADR-013 — Whole-trip stale tokens include resolved POI routing input
+
+**Status:** Accepted
+
+**Decision:** Include the immutable resolved `DayItemSnapshot` set (`item_id`, sequence, latitude, longitude) in the whole-trip preview token, in addition to persisted assignments, settings, selected provider, and target days.
+
+**Why:** A POI coordinate can change through either its item override or its linked `Place` without changing assignment or sequence. Recalculating on changed coordinates and accepting an earlier preview would apply a proposal the user did not review.
+
+**Alternatives considered:** Snapshot only assignments; accept recalculation when coordinates change; persist a separate preview record. The first two fail the compare-and-apply contract; a persisted preview adds lifecycle state without a Phase 003 need.

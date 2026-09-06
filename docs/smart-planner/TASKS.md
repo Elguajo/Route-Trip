@@ -54,7 +54,9 @@
     [x] Add authenticated non-mutating `POST /api/trips/{tripId}/optimize` and explicit `POST /api/trips/{tripId}/optimize/apply` around the existing allocator.
     [x] Require the complete POI assignment snapshot and opaque settings/day snapshot token; recalculate on the backend and atomically create only needed days and persist POI assignment/sequence.
     [x] Add the typed Angular whole-trip client with Preview, Apply, Cancel, matrix diagnostics, and reload after a successful apply.
-[ ] SP-003-04 — Verify multi-day allocation, endpoints, and persistence. ([phase](phases/003-trip-optimization.md))
+[x] SP-003-04 — Verify multi-day allocation, endpoints, and persistence. (completed 2026-09-06; `cd backend && .venv/bin/python -m pytest`: 67 passed; `cd src && npm test -- --watch=false`: 9 passed; `cd src && npm run build` passed; `git diff --check` passed; [phase](phases/003-trip-optimization.md))
+    [x] Verify non-mutating multi-day Preview, Cancel, explicit Apply, persisted/reloaded POI assignment and sequence, and affected-day route reload in an isolated browser fixture.
+    [x] Reject stale previews after POI routing-input, planner-setting, or selected-provider changes; retain atomic rollback and coordinate-less diagnostics coverage.
 
 ## Phase 004 — Time budget
 
