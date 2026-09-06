@@ -34,6 +34,8 @@ from ..models.models import (Image, ItemImageInput,
                              TripPackingListItemRead,
                              TripPackingListItemUpdate, TripPackingListRead,
                              TripPackingListUpdate, TripRead, TripReadBase,
+                             TripPlannerSettings, TripPlannerSettingsRead,
+                             TripPlannerSettingsUpdate,
                              TripShare, TripShareCreate, TripShareDetails,
                              TripShareRead, TripUpdate, User)
 from ..optimization import (DayItemSnapshot, DayManualReorderRequest, DayOptimizationApplyRequest,
@@ -305,6 +307,7 @@ def read_trip(
             selectinload(Trip.places),
             selectinload(Trip.image),
             selectinload(Trip.memberships),
+            selectinload(Trip.planner_settings),
         )
         .outerjoin(TripMember)
         .where(
@@ -317,6 +320,53 @@ def read_trip(
     if not db_trip:
         raise HTTPException(status_code=404, detail="Not found")
     return TripRead.serialize(db_trip)
+
+
+@router.get("/{trip_id}/planner-settings", response_model=TripPlannerSettingsRead)
+def read_trip_planner_settings(
+    session: SessionDep,
+    trip_id: int,
+    current_user: Annotated[str, Depends(get_current_username)],
+) -> TripPlannerSettingsRead:
+    _get_verified_trip(session, trip_id, current_user)
+    return TripPlannerSettingsRead.serialize(session.get(TripPlannerSettings, trip_id))
+
+
+@router.put("/{trip_id}/planner-settings", response_model=TripPlannerSettingsRead)
+def update_trip_planner_settings(
+    data: TripPlannerSettingsUpdate,
+    session: SessionDep,
+    trip_id: int,
+    current_user: Annotated[str, Depends(get_current_username)],
+) -> TripPlannerSettingsRead:
+    trip = _get_verified_trip(session, trip_id, current_user)
+    if trip.archived:
+        raise HTTPException(status_code=400, detail="Bad request")
+
+    replacement = TripPlannerSettings.from_update(trip_id, data)
+    existing = session.get(TripPlannerSettings, trip_id)
+    if existing:
+        for field in (
+            "requested_days",
+            "start_lat",
+            "start_lng",
+            "end_lat",
+            "end_lng",
+            "return_to_start",
+            "allowed_profiles",
+            "objective",
+        ):
+            setattr(existing, field, getattr(replacement, field))
+    else:
+        existing = replacement
+        session.add(existing)
+
+    try:
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise HTTPException(status_code=500, detail="Failed to update")
+    return TripPlannerSettingsRead.serialize(existing)
 
 
 @router.post("", response_model=TripReadBase)
@@ -341,6 +391,8 @@ def create_trip(
 
     try:
         session.add(new_trip)
+        session.flush()
+        session.add(TripPlannerSettings(trip_id=new_trip.id))
         session.commit()
     except Exception:
         session.rollback()

@@ -24,6 +24,9 @@ _Observed on 2026-09-06; this file reports implementation, not the roadmap._
 - The Angular `DayPlannerService` provides typed preview/apply clients and a scoped manual-reorder client. The selected-day panel shows preview costs, diagnostics, explicit Apply only when a complete matrix is available, actionable errors, and a manual sequence list with buttons plus `Alt` + arrow-key movement. Each day panel has a unique labelled heading for assistive technology.
 - `POST /api/trips/{tripId}/days/{dayId}/reorder` atomically accepts the complete unique item-ID set for that accessible non-archived day and updates only its `sequence`. It rejects missing or cross-day IDs and never changes `time` or an item's day.
 - Planner Apply and manual reorder reconcile only the selected local day. `RouteManagerService` replaces only that day's tagged layers, retains all other route layers, uses a stable day colour, and suppresses stale route responses; its selected-day summary is recalculated in persisted sequence order.
+- `TripPlannerSettings` is a one-to-one, cascade-deleted trip record for requested days, optional start/end coordinates, return-to-start, allowed routing profiles, and duration/distance objective. Existing and new trips have compatible defaults: one requested day, no endpoints, no return, `car`, and duration objective.
+- Authenticated trip readers receive `planner_settings` in full and shared trip serialization. `GET`/`PUT /api/trips/{tripId}/planner-settings` reads or replaces a complete validated settings payload; it does not allocate POIs, calculate routes, or alter days/items.
+- The user backup export/import paths preserve planner settings and assign defaults for older backups that lack them.
 
 ## Partially implemented
 
@@ -35,7 +38,7 @@ _Observed on 2026-09-06; this file reports implementation, not the roadmap._
 
 - Whole-trip allocation/clustering or optimisation score.
 - Drag-and-drop (button and keyboard reorder are implemented).
-- Trip/day planner settings, start/end locations, time budgets, route segments, or persisted optimisation summaries.
+- Day planner settings, time budgets, route segments, or persisted optimisation summaries.
 - Live travel mode, visit statuses (`planned`/`next`/`visited`/`skipped`), remaining-route optimization, or location watch/debounce.
 - Opening-hours, fixed events, locks, priorities, breaks, and transit matrix integration.
 - Broad backend automated coverage. Focused planner frontend tests now cover preview, Apply, diagnostics/errors, keyboard manual reorder, and selected-day route rerendering.
@@ -48,7 +51,7 @@ _Observed on 2026-09-06; this file reports implementation, not the roadmap._
 
 ## Tests status
 
-- `cd backend && python -m pytest` could not start on 2026-09-06 because this shell has no `python` executable. An isolated `backend/.venv` was created with Python 3.12.10; `cd backend && .venv/bin/python -m pytest` now passes 50 tests, including preview/apply isolation, scoped manual-reorder success, invalid-snapshot preservation, provider diagnostics, and the existing OSM direct-route regression.
+- `cd backend && python -m pytest` could not start on 2026-09-06 because this shell has no `python` executable. An isolated `backend/.venv` was created with Python 3.12.10; `cd backend && .venv/bin/python -m pytest` now passes 54 tests, including planner-settings migration backfill/rollback, API serialization/persistence, preview/apply isolation, scoped manual-reorder success, invalid-snapshot preservation, provider diagnostics, and the existing OSM direct-route regression.
 - `cd src && npm run build` passed on 2026-09-06 (with pre-existing bundle-budget/CommonJS warnings). `cd src && npm test -- --watch=false` runs the configured Karma/Jasmine target and passed 7 focused planner specs in Chrome, including keyboard reorder, selected-day rerendering, and blocking Apply when diagnostics report no complete matrix. `git diff --check` passed.
 - The focused backend test command is recorded in `TEST_PLAN.md`; the production dependency manifest remains unchanged.
 
@@ -56,7 +59,8 @@ _Observed on 2026-09-06; this file reports implementation, not the roadmap._
 
 - SQLModel models with Alembic revisions; SQLite initialization/migration is performed at startup.
 - Alembic revision `c8a5b1d3e7f2` adds `tripitem.sequence` as non-null. It safely adds the column with a database default, backfills each day in current `time`/`id` order, and avoids recreating the `tripitem` table during upgrade.
+- Alembic revision `e4b3f14f9a2c` creates the cascade-deleted one-to-one `tripplannersettings` table and inserts a complete default row for every existing trip without altering `trip`, `tripday`, or `tripitem`.
 
 ## Current active phase
 
-Phase 001 — Routing foundation is complete. Phase 002 — Optimize one day is complete: `SP-002-01` persisted and backfilled `TripItem.sequence` without changing the existing time-ordered display, `SP-002-02` added deterministic non-mutating order/cost calculation, `SP-002-03` exposes preview/apply APIs with atomic selected-day persistence, `SP-002-04` added the typed planner client, visible preview/apply flow, accessible manual order, and selected-day route replacement, and `SP-002-05` verified acceptance criteria and regressions. Phase 003 has not begun.
+Phase 001 — Routing foundation is complete. Phase 002 — Optimize one day is complete: `SP-002-01` persisted and backfilled `TripItem.sequence` without changing the existing time-ordered display, `SP-002-02` added deterministic non-mutating order/cost calculation, `SP-002-03` exposes preview/apply APIs with atomic selected-day persistence, `SP-002-04` added the typed planner client, visible preview/apply flow, accessible manual order, and selected-day route replacement, and `SP-002-05` verified acceptance criteria and regressions. Phase 003 is in progress: `SP-003-01` added compatible trip-level planner settings and its migration/API tests; allocation and whole-trip optimisation have not begun.

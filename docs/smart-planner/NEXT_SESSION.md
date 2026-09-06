@@ -2,11 +2,11 @@
 
 ## Current phase
 
-Phase 002 — Optimize one day (complete)
+Phase 003 — Trip optimization (SP-003-01 complete)
 
 ## Goal
 
-Phase 002 is verified. Do not begin Phase 003 unless explicitly requested.
+SP-003-01 is verified. Do not begin SP-003-02 unless explicitly requested.
 
 ## Already completed
 
@@ -31,10 +31,14 @@ Phase 002 is verified. Do not begin Phase 003 unless explicitly requested.
 - Validation fixed two confirmed UI defects: each repeated day panel now has a unique labelled heading, and an incomplete-matrix preview cannot invoke Apply.
 - Optimizer results retain every item. Coordinate-less or invalid-coordinate items stay in their original sequence positions and are returned in diagnostics; unavailable, mismatched, or incomplete matrices preserve the baseline order with no cost comparison.
 - Focused migration/API/optimizer tests and the full backend suite passed; `cd backend && .venv/bin/python -m alembic heads` reports `c8a5b1d3e7f2`.
+- `SP-003-01` added `TripPlannerSettings`: a cascade-deleted one-to-one setting record with requested days, optional start/end locations, return-to-start, a non-empty unique `car`/`foot`/`bike` allowed-profile list, and duration/distance objective. It does not allocate POIs, compute costs, modify days/items, or add a frontend form.
+- Alembic revision `e4b3f14f9a2c` creates `tripplannersettings` and backfills one default row per existing trip (`requested_days=1`, no locations, `return_to_start=false`, `allowed_profiles=["car"]`, `objective="duration"`). It leaves `trip`, `tripday`, and `tripitem` unchanged; downgrade only removes the new table.
+- Full and shared trip serialization now include `planner_settings`. Authenticated `GET`/`PUT /api/trips/{tripId}/planner-settings` reads/replaces the complete validated payload; normal new-trip creation and both backup import paths create/preserve the defaults.
+- `backend/tests/test_trip_planner_settings.py` covers migration backfill/downgrade, default serialization, API write/reload persistence, new-trip defaults, and profile-list validation. `cd backend && .venv/bin/python -m pytest` passed 54 tests; `cd src && npm test -- --watch=false` passed 7 tests; `cd src && npm run build` passed with existing bundle-budget/CommonJS warnings; `git diff --check` passed; `cd backend && .venv/bin/python -m alembic heads` reports `e4b3f14f9a2c`.
 
 ## Next task
 
-Phase 002 is complete. Start `SP-003-01` only with explicit direction; do not start it as continuation of this session.
+`SP-003-01` is complete. Start `SP-003-02` only with explicit direction; keep allocation and per-day orchestration isolated from `TripPlannerSettings` and preserve all Phase 001/002 contracts.
 
 ## Files to read
 
@@ -43,10 +47,13 @@ Phase 002 is complete. Start `SP-003-01` only with explicit direction; do not st
 - `docs/smart-planner/CURRENT_STATE.md`
 - `docs/smart-planner/TASKS.md`
 - `docs/smart-planner/phases/003-trip-optimization.md` (only after Phase 003 is authorized)
+- `backend/trip/models/models.py`
+- `backend/trip/routers/trips.py`
+- `backend/trip/alembic/versions/e4b3f14f9a2c_trip_planner_settings.py`
 
 ## Files likely to modify
 
-- Phase 003 files are not yet determined; preserve all completed Phase 002 contracts.
+- Phase 003 allocation/orchestration files are not yet determined; preserve all completed Phase 001/002 contracts and the settings API/persistence boundary.
 
 ## Important decisions
 
@@ -59,6 +66,7 @@ Phase 002 is complete. Start `SP-003-01` only with explicit direction; do not st
 - The day calculator does not use partial matrix data: an unreachable pair, snapshot mismatch, or typed matrix failure returns the persisted baseline order and diagnostics without a cost comparison. Coordinate-less items remain at their persisted positions and are not silently included in route cost.
 - Apply is an explicit compare-and-apply contract: the client returns preview `starting_item_ids`; the server checks that exact sequence order, recalculates rather than trusting a client-supplied optimized order, and commits only a full calculation for the selected day. Stale, malformed, unavailable, incomplete, or mismatched calculations leave all sequences untouched.
 - Manual reorder is a separate complete-list transaction scoped to one authorized trip/day. This prevents ordinary item updates from changing planner sequence, validates that no item is added/removed/cross-day, and lets the UI replace only that day from the backend response.
+- Planner inputs live in a defaulted one-to-one `TripPlannerSettings` record rather than `Trip` columns. The setting API replaces a complete validated snapshot; its defaults let existing trips and old backup imports keep their prior behavior until whole-trip planning is explicitly invoked.
 
 ## Blockers
 

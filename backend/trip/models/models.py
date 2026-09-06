@@ -88,6 +88,17 @@ class MapProvider(str, Enum):
     PHOTON = "photon"
 
 
+class PlannerRoutingProfile(str, Enum):
+    CAR = "car"
+    FOOT = "foot"
+    BIKE = "bike"
+
+
+class PlannerOptimizationObjective(str, Enum):
+    DURATION = "duration"
+    DISTANCE = "distance"
+
+
 class AuthParams(BaseModel):
     oidc: str | None
     register_enabled: bool
@@ -606,6 +617,92 @@ class TripBase(SQLModel):
     archival_review: str | None = None
 
 
+class TripPlannerLocation(BaseModel):
+    lat: float = Field(ge=-90, le=90)
+    lng: float = Field(ge=-180, le=180)
+
+
+class TripPlannerSettingsUpdate(BaseModel):
+    requested_days: int = Field(ge=1)
+    start_location: TripPlannerLocation | None = None
+    end_location: TripPlannerLocation | None = None
+    return_to_start: bool = False
+    allowed_profiles: list[PlannerRoutingProfile]
+    objective: PlannerOptimizationObjective
+
+    @field_validator("allowed_profiles")
+    @classmethod
+    def allowed_profiles_must_be_unique_and_nonempty(
+        cls, profiles: list[PlannerRoutingProfile]
+    ) -> list[PlannerRoutingProfile]:
+        if not profiles:
+            raise ValueError("at least one routing profile is required")
+        if len(set(profiles)) != len(profiles):
+            raise ValueError("routing profiles must be unique")
+        return profiles
+
+
+class TripPlannerSettings(SQLModel, table=True):
+    trip_id: int = Field(foreign_key="trip.id", ondelete="CASCADE", primary_key=True)
+    requested_days: int = Field(default=1, nullable=False)
+    start_lat: float | None = None
+    start_lng: float | None = None
+    end_lat: float | None = None
+    end_lng: float | None = None
+    return_to_start: bool = Field(default=False, nullable=False)
+    allowed_profiles: list[PlannerRoutingProfile] = Field(
+        default_factory=lambda: [PlannerRoutingProfile.CAR],
+        sa_column=Column(JSON, nullable=False),
+    )
+    objective: PlannerOptimizationObjective = Field(
+        default=PlannerOptimizationObjective.DURATION,
+        nullable=False,
+    )
+
+    trip: "Trip" = Relationship(back_populates="planner_settings")
+
+    @classmethod
+    def from_update(cls, trip_id: int, data: TripPlannerSettingsUpdate) -> "TripPlannerSettings":
+        return cls(
+            trip_id=trip_id,
+            requested_days=data.requested_days,
+            start_lat=data.start_location.lat if data.start_location else None,
+            start_lng=data.start_location.lng if data.start_location else None,
+            end_lat=data.end_location.lat if data.end_location else None,
+            end_lng=data.end_location.lng if data.end_location else None,
+            return_to_start=data.return_to_start,
+            allowed_profiles=data.allowed_profiles,
+            objective=data.objective,
+        )
+
+
+class TripPlannerSettingsRead(TripPlannerSettingsUpdate):
+    @classmethod
+    def serialize(cls, obj: TripPlannerSettings | None) -> "TripPlannerSettingsRead":
+        if obj is None:
+            return cls(
+                requested_days=1,
+                allowed_profiles=[PlannerRoutingProfile.CAR],
+                objective=PlannerOptimizationObjective.DURATION,
+            )
+        return cls(
+            requested_days=obj.requested_days,
+            start_location=(
+                TripPlannerLocation(lat=obj.start_lat, lng=obj.start_lng)
+                if obj.start_lat is not None and obj.start_lng is not None
+                else None
+            ),
+            end_location=(
+                TripPlannerLocation(lat=obj.end_lat, lng=obj.end_lng)
+                if obj.end_lat is not None and obj.end_lng is not None
+                else None
+            ),
+            return_to_start=obj.return_to_start,
+            allowed_profiles=obj.allowed_profiles,
+            objective=obj.objective,
+        )
+
+
 class Trip(TripBase, table=True):
     id: int | None = Field(default=None, primary_key=True)
     user: str = Field(foreign_key="user.username", ondelete="CASCADE", index=True)
@@ -630,6 +727,11 @@ class Trip(TripBase, table=True):
     checklists: list["TripChecklist"] = Relationship(back_populates="trip", cascade_delete=True)
     memberships: list["TripMember"] = Relationship(back_populates="trip", cascade_delete=True)
     attachments: list["TripAttachment"] = Relationship(back_populates="trip", cascade_delete=True)
+    planner_settings: TripPlannerSettings | None = Relationship(
+        back_populates="trip",
+        cascade_delete=True,
+        sa_relationship_kwargs={"uselist": False},
+    )
 
 
 class TripCreate(TripBase):
@@ -673,6 +775,7 @@ class TripRead(TripBase):
     collaborators: list["TripMemberRead"]
     shared: bool
     attachments: list["TripAttachmentRead"]
+    planner_settings: TripPlannerSettingsRead
 
     @classmethod
     def serialize(cls, obj: Trip) -> "TripRead":
@@ -690,6 +793,7 @@ class TripRead(TripBase):
             notes=obj.notes,
             archival_review=obj.archival_review,
             attachments=[TripAttachmentRead.serialize(att) for att in obj.attachments],
+            planner_settings=TripPlannerSettingsRead.serialize(obj.planner_settings),
         )
 
 
@@ -1030,6 +1134,7 @@ class TripShareRead(TripBase):
     image_id: int | None
     days: list["TripShareDayRead"]
     places: list["PlaceRead"]
+    planner_settings: TripPlannerSettingsRead
 
     @classmethod
     def serialize(cls, obj: Trip) -> "TripShareRead":
@@ -1042,6 +1147,7 @@ class TripShareRead(TripBase):
             days=[TripShareDayRead.serialize(day) for day in obj.days],
             places=[PlaceRead.serialize(place) for place in obj.places],
             currency=obj.currency if obj.currency else get_settings().DEFAULT_CURRENCY,
+            planner_settings=TripPlannerSettingsRead.serialize(obj.planner_settings),
         )
 
 

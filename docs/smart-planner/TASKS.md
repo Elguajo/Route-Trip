@@ -43,7 +43,9 @@
 
 ## Phase 003 — Trip optimization
 
-[ ] SP-003-01 — Add trip-level planner settings and migration. ([phase](phases/003-trip-optimization.md))
+[x] SP-003-01 — Add trip-level planner settings and migration. (completed 2026-09-06; `backend/.venv/bin/python -m pytest`: 54 passed; `cd src && npm test -- --watch=false`: 7 passed; `cd src && npm run build` passed; `git diff --check` passed; [phase](phases/003-trip-optimization.md))
+    [x] Persist requested days, optional start/end locations, return-to-start, allowed matrix profiles, and objective through a one-to-one trip settings record.
+    [x] Backfill compatible defaults for every existing trip, serialize settings, preserve backup import/export, and test migration/API persistence.
 [ ] SP-003-02 — Implement geographic allocation and per-day optimization. ([phase](phases/003-trip-optimization.md))
 [ ] SP-003-03 — Add whole-trip preview/apply APIs and planning UI. ([phase](phases/003-trip-optimization.md))
 [ ] SP-003-04 — Verify multi-day allocation, endpoints, and persistence. ([phase](phases/003-trip-optimization.md))

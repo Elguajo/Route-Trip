@@ -24,7 +24,9 @@ from ..models.models import (Backup, BackupStatus, Category, CategoryRead,
                              TripItemAttachmentLink, TripItemImageLink,
                              TripPackingList, TripPackingListEntry,
                              TripPackingListItem, TripPackingListItemRead,
-                             TripPackingListRead, TripRead, User, UserRead)
+                             TripPackingListRead, TripPlannerSettings,
+                             TripPlannerSettingsUpdate, TripRead, User,
+                             UserRead)
 from .date import dt_utc, iso_to_dt
 from .utils import (assets_folder_path, attachments_folder_path,
                     attachments_trip_folder_path, b64img_decode,
@@ -72,6 +74,16 @@ def zip_trip_attachments(trip_id: int, attachments: list[TripAttachment], zip_fp
             if not att_path.is_file():
                 continue
             zipf.write(att_path, _dedupe_zip_filename(attachment.filename, used_names))
+
+
+def _planner_settings_from_backup(trip_data: dict, trip_id: int) -> TripPlannerSettings:
+    settings_data = trip_data.get("planner_settings")
+    if not isinstance(settings_data, dict):
+        return TripPlannerSettings(trip_id=trip_id)
+    return TripPlannerSettings.from_update(
+        trip_id,
+        TripPlannerSettingsUpdate.model_validate(settings_data),
+    )
 
 
 def _admin_backup_export(zip_fp: Path):
@@ -127,6 +139,7 @@ def _user_backup_export(user: str, backup_dt, zip_fp: Path, session: Session):
                 selectinload(Trip.packing_lists).selectinload(TripPackingList.items),
                 selectinload(Trip.checklists).selectinload(TripChecklist.items),
                 selectinload(Trip.attachments),
+                selectinload(Trip.planner_settings),
             )
             .execution_options(yield_per=10)
         )
@@ -449,6 +462,7 @@ def process_backup_import(
                         "checklist_items",
                         "packing_lists",
                         "checklists",
+                        "planner_settings",
                     }
                 }
                 new_trip["user"] = current_user
@@ -477,6 +491,7 @@ def process_backup_import(
                 session.add(new_trip)
                 session.flush()
                 session.refresh(new_trip)
+                session.add(_planner_settings_from_backup(trip, new_trip.id))
 
                 for place in trip.get("places", []):
                     old_id = place.get("id")
@@ -873,7 +888,15 @@ def process_legacy_import(
             trip_data = {
                 key: trip[key]
                 for key in trip.keys()
-                if key not in {"id", "image", "image_id", "places", "days", "shared"}
+                if key not in {
+                    "id",
+                    "image",
+                    "image_id",
+                    "places",
+                    "days",
+                    "shared",
+                    "planner_settings",
+                }
             }
             trip_data["user"] = current_user
 
@@ -893,6 +916,7 @@ def process_legacy_import(
             new_trip = Trip(**trip_data)
             session.add(new_trip)
             session.flush()
+            session.add(_planner_settings_from_backup(trip, new_trip.id))
 
             for place in trip.get("places", []):
                 old_id = place["id"]

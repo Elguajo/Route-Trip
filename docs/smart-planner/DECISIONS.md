@@ -85,3 +85,13 @@
 **Why:** Manual ordering is a multi-row consistency operation, not an attribute edit. A full scoped snapshot prevents accidental cross-day moves or dropped items while allowing the Angular client to reconcile just the changed day and recalculate its tagged route layers.
 
 **Alternatives considered:** Make `sequence` writable on the existing item endpoint; reorder client-side without persistence; submit partial move operations. Each either permits transient/inconsistent order, blurs the time/sequence boundary, or weakens server-side day scoping.
+
+## ADR-010 — Trip planner settings are a one-to-one defaulted record
+
+**Status:** Accepted
+
+**Decision:** Store Phase 003 planner inputs in a cascade-deleted one-to-one `TripPlannerSettings` record rather than adding columns to `Trip`. Backfill every existing trip with one default record: one requested day, no start/end, no return-to-start, `car` profile, and duration objective. Full and shared trip serialization expose the setting object; an authenticated complete-payload `GET`/`PUT /api/trips/{tripId}/planner-settings` boundary owns updates.
+
+**Why:** The settings are planner-specific, optional for legacy trip behavior, and will evolve independently of core trip metadata. A separate row leaves the established `Trip` schema and create/update contract intact, gives each old trip deterministic values, and lets Phase 003 orchestration consume a single validated input snapshot without starting allocation or route computation.
+
+**Alternatives considered:** Add nullable settings columns to `Trip`; create settings only when a user first opens the planner; accept partial fields on the ordinary trip update endpoint. Those approaches either mix planner policy into a stable base model, leave legacy trips with ambiguous configuration, or weaken validation/ownership of a coherent settings payload.
