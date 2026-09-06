@@ -64,6 +64,8 @@ export interface TripDay {
   items: TripItem[];
   bookings?: TripBooking[];
   notes?: string;
+  start_time?: string;
+  end_time?: string;
 }
 
 export interface TripItem {
@@ -76,6 +78,7 @@ export interface TripItem {
   lat?: number;
   lng?: number;
   price?: number;
+  duration?: number;
   day_id: number;
   status?: string | TripStatus;
   image?: string;

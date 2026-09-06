@@ -30,7 +30,12 @@ def post_category(
     session: SessionDep,
     current_user: Annotated[str, Depends(get_current_username)],
 ) -> CategoryRead:
-    new_category = Category(name=category.name, color=category.color, user=current_user)
+    new_category = Category(
+        name=category.name,
+        color=category.color,
+        default_duration=category.default_duration,
+        user=current_user,
+    )
 
     filename = None
     if category.image:

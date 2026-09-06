@@ -2,11 +2,11 @@
 
 ## Current phase
 
-Phase 004 — Time budget is next (not authorized)
+Phase 004 — SP-004-02 is next (not authorized)
 
 ## Goal
 
-Phase 003 is verified. Do not begin Phase 004 unless explicitly requested.
+SP-004-01 is verified. Do not begin SP-004-02 unless explicitly requested.
 
 ## Already completed
 
@@ -43,10 +43,12 @@ Phase 003 is verified. Do not begin Phase 004 unless explicitly requested.
 - `TripPlannerService` and the trip panel provide typed whole-trip Preview / Apply / Cancel. Apply reloads the persisted trip and rerenders affected day routes only after success; it has no implicit application path.
 - `backend/tests/test_optimize_trip_api.py` covers preview non-mutation, persisted/reloaded allocation, stale snapshot rejection, coordinate-less diagnostics/retention, and atomic rollback. Full validation: `cd backend && .venv/bin/python -m pytest` passed 64 tests; `cd src && npm test -- --watch=false` passed 9 tests; `cd src && npm run build` passed with existing bundle-budget/CommonJS warnings; `git diff --check` passed.
 - `SP-003-04` verified the complete Phase 003 acceptance criteria. A confirmed stale-preview defect was fixed: the whole-trip token now also covers the resolved POI routing snapshots, so changing a POI's coordinates through either its item override or linked `Place` rejects the old preview. Regressions cover changed POI routing input, planner settings, and selected provider; persistence assertions cover the applied POI day/sequence mapping. An isolated browser fixture confirmed Preview does not persist, Cancel clears its local preview, and explicit Apply reloads the trip and rerenders affected-day routes with no console errors. Full validation: `cd backend && .venv/bin/python -m pytest` passed 67 tests; `cd src && npm test -- --watch=false` passed 9 tests; `cd src && npm run build` passed with existing bundle-budget/CommonJS warnings; `git diff --check` passed.
+- `SP-004-01` added Alembic revision `f1c3d9a8e2b4`: existing categories receive a non-null 60-minute default visit duration, old/new days receive `09:00`–`18:00` local planning windows, and itinerary items receive an optional duration override. Existing optional `Place.duration` remains the place override; the pure resolver reports strict item → place → category precedence and source. Day windows must use `HH:MM` and end after start; `DayTimeBudget` derives usable minutes rather than persisting a duplicate. Existing category/day/item endpoints and Angular types expose these additive fields, but there is no time-settings UI or planner calculation change.
+- `SP-004-01` intentionally did not modify `TripAllocator`, `TripOptimizer`, routing providers/matrices, preview/apply payloads, stale snapshots, allocation/order behavior, or direct route handling. It added no fallback or geodesic estimate. Full validation: `cd backend && .venv/bin/python -m pytest` passed 71 tests; `cd src && npm test -- --watch=false` passed 9 tests; `cd src && npm run build` passed with existing bundle-budget/CommonJS warnings; `cd backend && .venv/bin/python -m alembic heads` reports `f1c3d9a8e2b4`; `git diff --check` passed.
 
 ## Next task
 
-Phase 003 is complete. Do not start Phase 004 unless explicitly directed; preserve Phase 001–003 contracts when Phase 004 is authorized.
+`SP-004-01` is complete. Do not start `SP-004-02` unless explicitly directed; preserve Phase 001–003 contracts and the Phase 004 duration/day-window policy.
 
 ## Files to read
 
@@ -54,11 +56,11 @@ Phase 003 is complete. Do not start Phase 004 unless explicitly directed; preser
 - `docs/smart-planner/NEXT_SESSION.md`
 - `docs/smart-planner/CURRENT_STATE.md`
 - `docs/smart-planner/TASKS.md`
-- `docs/smart-planner/phases/004-time-budget.md` (only after Phase 004 is authorized)
+- `docs/smart-planner/phases/004-time-budget.md`
 
 ## Files likely to modify
 
-- Phase 004 should not begin without explicit authorization. Keep `backend/trip/optimization/trip_allocator.py` non-persisting and provider-neutral.
+- `backend/trip/optimization/constraints.py` and `backend/trip/optimization/trip_allocator.py` for SP-004-02 only after explicit authorization. Keep allocation non-persisting and provider-neutral.
 
 ## Important decisions
 
@@ -75,6 +77,7 @@ Phase 003 is complete. Do not start Phase 004 unless explicitly directed; preser
 - Allocation copies the saved settings row into an immutable calculation snapshot and is deterministic: the first allowed profile is the sole selected profile; a complete selected-provider matrix drives duration/distance grouping; coordinate-less and non-routable cases retain every input ID in a stable balanced allocation with diagnostics. Per-day order delegates to the existing Phase 002 calculator; this layer never persists or exposes a preview/apply API.
 - Whole-trip apply is another explicit compare-and-apply boundary: it requires the previewed POI `(id, day, sequence)` snapshot and a token covering saved settings, selected provider, and target days, recalculates server-side, and updates only POIs. Generic itinerary items are retained in place and keep their sequence; only required non-empty target days are created.
 - Whole-trip stale tokens also cover the resolved POI routing snapshots, closing the case where a linked POI coordinate changes without changing its assignment or sequence.
+- Visit estimates are integer minutes: optional item override wins over the existing optional Place override, then the persisted category default. Day windows are same-day local `HH:MM` values; their usable duration is derived and Phase 004-01 does not apply it to allocation/order.
 
 ## Blockers
 

@@ -125,3 +125,13 @@
 **Why:** A POI coordinate can change through either its item override or its linked `Place` without changing assignment or sequence. Recalculating on changed coordinates and accepting an earlier preview would apply a proposal the user did not review.
 
 **Alternatives considered:** Snapshot only assignments; accept recalculation when coordinates change; persist a separate preview record. The first two fail the compare-and-apply contract; a persisted preview adds lifecycle state without a Phase 003 need.
+
+## ADR-014 — Visit duration resolves from item to place to category, while days own local windows
+
+**Status:** Accepted
+
+**Decision:** Store a non-null integer-minute `default_duration` on `Category` (backfilled to 60), retain the existing optional `Place.duration` as a place-specific override, and add a nullable `TripItem.duration` for an itinerary-only override. Resolve in that order: item, place, category. Store each day’s validated same-day local `start_time` and `end_time` directly on `TripDay`, defaulted to 09:00–18:00; derive usable minutes instead of persisting a duplicate value.
+
+**Why:** Categories are already user-owned reusable POI taxonomy, while an item can need a one-off estimate without changing the underlying place. The day is the natural owner of a date-local window. Defaults make existing data immediately readable and deterministic, without changing current routing or allocation behaviour.
+
+**Alternatives considered:** A new global duration-settings table; copying a category duration to every place/item; storing a separate maximum-budget column; or interpreting overnight windows. Those either duplicate existing policy, make later category changes opaque, invite inconsistent data, or require an unrequested timezone/overnight scheduling model. Budget-aware calculation remains SP-004-02.

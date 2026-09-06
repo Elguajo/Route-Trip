@@ -4,6 +4,7 @@ export interface Category {
   image_id: number;
   image: string;
   color?: string;
+  default_duration?: number;
 }
 
 export interface LinkItem {

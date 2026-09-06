@@ -864,7 +864,13 @@ def create_tripday(
     if db_trip.archived:
         raise HTTPException(status_code=400, detail="Bad request")
 
-    new_day = TripDay(label=td.label, dt=td.dt, trip_id=trip_id)
+    new_day = TripDay(
+        label=td.label,
+        dt=td.dt,
+        start_time=td.start_time,
+        end_time=td.end_time,
+        trip_id=trip_id,
+    )
 
     session.add(new_day)
     session.commit()
@@ -986,6 +992,7 @@ async def create_tripitem(
         lng=item.lng,
         day_id=day_id,
         price=item.price,
+        duration=item.duration,
         status=item.status,
         gpx=item.gpx,
         links=links,

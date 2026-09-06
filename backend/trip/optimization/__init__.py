@@ -1,6 +1,10 @@
 """Provider-neutral travel-matrix contracts for Smart Planner."""
 
 from .cache import TravelMatrixCache
+from .constraints import (DEFAULT_CATEGORY_DURATION_MINUTES,
+                          MAX_VISIT_DURATION_MINUTES, DayTimeBudget,
+                          VisitDurationResolution, VisitDurationSource,
+                          resolve_visit_duration)
 from .day_optimizer import (
     DayOptimizationApplyRequest,
     DayOptimizationApplyResult,
@@ -46,6 +50,7 @@ from .routing import (
 
 __all__ = [
     "CoordinateSnapshot",
+    "DEFAULT_CATEGORY_DURATION_MINUTES",
     "DayOptimizationApplyRequest",
     "DayOptimizationApplyResult",
     "DayCostComparison",
@@ -56,6 +61,8 @@ __all__ = [
     "DayOptimizationPreviewRequest",
     "DayOptimizationResult",
     "DayRouteCost",
+    "DayTimeBudget",
+    "MAX_VISIT_DURATION_MINUTES",
     "OSRMTableRoutingProvider",
     "RoutingCapability",
     "RoutingFailure",
@@ -80,6 +87,9 @@ __all__ = [
     "TripPlanningTotals",
     "TripPlanningSettings",
     "TripOptimizer",
+    "VisitDurationResolution",
+    "VisitDurationSource",
     "get_routing_capability",
+    "resolve_visit_duration",
     "unsupported_matrix_failure",
 ]

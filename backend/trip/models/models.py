@@ -4,7 +4,7 @@ from enum import Enum
 from types import SimpleNamespace
 from typing import Annotated
 
-from pydantic import BaseModel, StringConstraints, field_validator
+from pydantic import BaseModel, StringConstraints, field_validator, model_validator
 from sqlalchemy import (JSON, Column, Index, MetaData, UniqueConstraint, event,
                         select)
 from sqlalchemy.orm import Session, object_session
@@ -465,6 +465,7 @@ class AdminUserRead(UserBase):
 class CategoryBase(SQLModel):
     name: str
     color: str | None = None
+    default_duration: int = Field(default=60, ge=0, le=1_440)
 
 
 class Category(CategoryBase, table=True):
@@ -501,6 +502,7 @@ class CategoryRead(CategoryBase):
             image_id=obj.image_id,
             image=_prefix_assets_url(obj.image.filename) if obj.image else "/favicon.png",
             color=obj.color if obj.color else "#000000",
+            default_duration=obj.default_duration,
         )
 
 
@@ -532,7 +534,7 @@ class PlaceBase(SQLModel):
     allowdog: bool | None = None
     description: str | None = None
     price: float | None = None
-    duration: int | None = None
+    duration: int | None = Field(default=None, ge=0, le=1_440)
     favorite: bool | None = None
     visited: bool | None = None
     gpx: str | None = None
@@ -842,6 +844,16 @@ class TripDayBase(SQLModel):
     label: str
     dt: date | None = None
     notes: str | None = None
+    start_time: Annotated[str, StringConstraints(pattern=r"^([01]\d|2[0-3]):[0-5]\d$")] = "09:00"
+    end_time: Annotated[str, StringConstraints(pattern=r"^([01]\d|2[0-3]):[0-5]\d$")] = "18:00"
+
+    @model_validator(mode="after")
+    def end_time_must_follow_start_time(self) -> "TripDayBase":
+        start_hour, start_minute = (int(part) for part in self.start_time.split(":"))
+        end_hour, end_minute = (int(part) for part in self.end_time.split(":"))
+        if (end_hour, end_minute) <= (start_hour, start_minute):
+            raise ValueError("end_time must be later than start_time")
+        return self
 
 
 class TripDay(TripDayBase, table=True):
@@ -926,6 +938,8 @@ class TripDayRead(TripDayBase):
             items=[TripItemRead.serialize(item) for item in obj.items],
             bookings=[TripBookingRead.serialize(b) for b in obj.bookings],
             notes=obj.notes,
+            start_time=obj.start_time,
+            end_time=obj.end_time,
         )
 
 
@@ -951,6 +965,7 @@ class TripItemBase(SQLModel):
     comment: str | None = None
     lat: float | None = None
     price: float | None = None
+    duration: int | None = Field(default=None, ge=0, le=1_440)
     lng: float | None = None
     status: TripItemStatusEnum | None = None
     gpx: str | None = None
@@ -1038,6 +1053,7 @@ class TripItemRead(TripItemBase):
             lat=obj.lat,
             lng=obj.lng,
             price=obj.price,
+            duration=obj.duration,
             day_id=obj.day_id,
             status=obj.status,
             place=PlaceRead.serialize(obj.place) if obj.place else None,

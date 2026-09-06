@@ -60,7 +60,10 @@
 
 ## Phase 004 — Time budget
 
-[ ] SP-004-01 — Add duration/default policy and day time settings. ([phase](phases/004-time-budget.md))
+[x] SP-004-01 — Add duration/default policy and day time settings. (completed 2026-09-06; `cd backend && .venv/bin/python -m pytest`: 71 passed; `cd src && npm test -- --watch=false`: 9 passed; `cd src && npm run build` passed; `git diff --check` passed; [phase](phases/004-time-budget.md))
+    [x] Persist category defaults, optional item overrides, and compatible per-day 09:00–18:00 time-window defaults.
+    [x] Resolve duration deterministically as item override → existing place override → category default, with validated positive day windows.
+    [x] Preserve existing provider-neutral routing, allocation/order, and explicit preview/apply contracts; no budget integration or UI was added.
 [ ] SP-004-02 — Make allocation/order budget-aware and report overflow. ([phase](phases/004-time-budget.md))
 [ ] SP-004-03 — Expose/edit time estimates and validate budgets. ([phase](phases/004-time-budget.md))
 
