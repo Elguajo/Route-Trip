@@ -33,6 +33,7 @@ const preview: DayOptimizationResult = {
     duration_saved_s: 180,
     distance_saved_m: 400,
   },
+  schedule: null,
   diagnostics: [{ kind: 'coordinateless_item', item_ids: [], message: 'A diagnostic' }],
 };
 

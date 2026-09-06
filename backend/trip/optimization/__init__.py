@@ -16,6 +16,8 @@ from .day_optimizer import (
     DayOptimizationPreviewRequest,
     DayOptimizationResult,
     DayRouteCost,
+    DayScheduleEstimate,
+    DayScheduleItemEstimate,
     TripOptimizer,
 )
 from .osrm_table import OSRMTableRoutingProvider
@@ -61,6 +63,8 @@ __all__ = [
     "DayOptimizationPreviewRequest",
     "DayOptimizationResult",
     "DayRouteCost",
+    "DayScheduleEstimate",
+    "DayScheduleItemEstimate",
     "DayTimeBudget",
     "MAX_VISIT_DURATION_MINUTES",
     "OSRMTableRoutingProvider",

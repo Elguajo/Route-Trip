@@ -4,6 +4,7 @@ from trip.optimization import (
     CoordinateSnapshot,
     DayItemSnapshot,
     DayOptimizationDiagnosticKind,
+    DayTimeBudget,
     RoutingCapability,
     RoutingFailure,
     RoutingFailureKind,
@@ -154,3 +155,67 @@ def test_day_optimizer_retains_coordinateless_items_in_order_and_diagnostics() -
     assert result.diagnostics[0].kind is DayOptimizationDiagnosticKind.COORDINATELESS_ITEM
     assert result.diagnostics[0].item_ids == (1,)
     assert provider.requests[0].coordinates == (items[1].travel_location(), items[2].travel_location())
+
+
+def test_day_optimizer_reports_a_09_to_18_overflow_from_travel_and_visits() -> None:
+    items = tuple(
+        DayItemSnapshot(
+            item_id=item_id,
+            sequence=item_id - 1,
+            lat=float(item_id),
+            lng=0.0,
+            visit_duration_minutes=200,
+        )
+        for item_id in range(1, 4)
+    )
+    matrix = TravelMatrix(
+        provider="stub",
+        profile=RoutingProfile.CAR,
+        snapshot=CoordinateSnapshot(coordinates=tuple(item.travel_location() for item in items)),
+        durations_s=((0, 2_700, 2_700), (2_700, 0, 2_700), (2_700, 2_700, 0)),
+        distances_m=((0, 1, 1), (1, 0, 1), (1, 1, 0)),
+    )
+
+    result = asyncio.run(
+        TripOptimizer(StubRoutingProvider(matrix)).optimize_day(
+            items,
+            RoutingProfile.CAR,
+            DayTimeBudget(start_time="09:00", end_time="18:00"),
+        )
+    )
+
+    assert result.schedule is not None
+    assert result.schedule.model_dump() == {
+        "start_time": "09:00",
+        "end_time": "18:00",
+        "usable_minutes": 540,
+        "travel_minutes": 90,
+        "visit_minutes": 600,
+        "total_minutes": 690,
+        "overflow_minutes": 150,
+        "items": (
+            {
+                "item_id": 1,
+                "arrival_time": "09:00",
+                "departure_time": "12:20",
+                "travel_minutes_before": 0,
+                "visit_minutes": 200,
+            },
+            {
+                "item_id": 2,
+                "arrival_time": "13:05",
+                "departure_time": "16:25",
+                "travel_minutes_before": 45,
+                "visit_minutes": 200,
+            },
+            {
+                "item_id": 3,
+                "arrival_time": "17:10",
+                "departure_time": "20:30",
+                "travel_minutes_before": 45,
+                "visit_minutes": 200,
+            },
+        ),
+    }
+    assert result.diagnostics[-1].kind is DayOptimizationDiagnosticKind.TIME_BUDGET_OVERFLOW
+    assert result.diagnostics[-1].item_ids == (3,)

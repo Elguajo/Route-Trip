@@ -8,6 +8,7 @@ from trip.models.models import (
 from trip.optimization import (
     CoordinateSnapshot,
     DayItemSnapshot,
+    DayTimeBudget,
     RoutingCapability,
     RoutingProfile,
     TravelMatrix,
@@ -166,6 +167,31 @@ def test_trip_allocator_uses_saved_start_and_end_anchors_without_persisting_anyt
 
     assert result.days[0].item_ids == (3, 4)
     assert result.days[1].item_ids == (1, 2)
+
+
+def test_trip_allocator_rebalances_geographic_groups_to_reduce_time_budget_overflow() -> None:
+    items = tuple(
+        DayItemSnapshot(
+            item_id=item_id,
+            sequence=item_id - 1,
+            lat=lat,
+            lng=0.0,
+            visit_duration_minutes=200,
+        )
+        for item_id, lat in ((1, 1.0), (2, 1.1), (3, 1.2), (4, 10.0))
+    )
+    budget = DayTimeBudget(start_time="09:00", end_time="18:00")
+
+    result = asyncio.run(
+        TripAllocator(ClusterMatrixProvider()).allocate(
+            _settings(requested_days=2), items, (budget, budget)
+        )
+    )
+
+    assert [len(day.item_ids) for day in result.days] == [2, 2]
+    assert sorted(item_id for day in result.days for item_id in day.item_ids) == [1, 2, 3, 4]
+    assert all(day.optimization.schedule is not None for day in result.days)
+    assert all(day.optimization.schedule.overflow_minutes == 0 for day in result.days if day.optimization.schedule)
 
 
 def test_trip_allocator_reports_unsupported_matrix_without_fallback_or_item_loss() -> None:

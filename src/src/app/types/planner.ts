@@ -22,16 +22,36 @@ export interface RoutingFailure {
 }
 
 export interface DayOptimizationDiagnostic {
-  kind: 'coordinateless_item' | 'matrix_failure' | 'incomplete_matrix' | 'matrix_snapshot_mismatch';
+  kind: 'coordinateless_item' | 'matrix_failure' | 'incomplete_matrix' | 'matrix_snapshot_mismatch' | 'time_budget_overflow';
   message: string;
   item_ids: number[];
   routing_failure?: RoutingFailure | null;
+}
+
+export interface DayScheduleItemEstimate {
+  item_id: number;
+  arrival_time: string;
+  departure_time: string;
+  travel_minutes_before: number;
+  visit_minutes: number;
+}
+
+export interface DayScheduleEstimate {
+  start_time: string;
+  end_time: string;
+  usable_minutes: number;
+  travel_minutes: number;
+  visit_minutes: number;
+  total_minutes: number;
+  overflow_minutes: number;
+  items: DayScheduleItemEstimate[];
 }
 
 export interface DayOptimizationResult {
   starting_item_ids: number[];
   optimized_item_ids: number[];
   cost_comparison: DayCostComparison | null;
+  schedule: DayScheduleEstimate | null;
   diagnostics: DayOptimizationDiagnostic[];
 }
 

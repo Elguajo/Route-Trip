@@ -8,6 +8,7 @@ from math import isfinite
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from .constraints import DayTimeBudget, resolve_visit_duration
 from .routing import (
     CoordinateSnapshot,
     RoutingFailure,
@@ -28,6 +29,7 @@ class DayItemSnapshot(BaseModel):
     sequence: int
     lat: float | None = None
     lng: float | None = None
+    visit_duration_minutes: int = Field(default=0, ge=0, le=24 * 60)
 
     @classmethod
     def from_trip_items(cls, items: Iterable[object]) -> tuple["DayItemSnapshot", ...]:
@@ -39,6 +41,7 @@ class DayItemSnapshot(BaseModel):
                 sequence=item.sequence,
                 lat=item.lat,
                 lng=item.lng,
+                visit_duration_minutes=resolve_visit_duration(item).minutes,
             )
             for item in items
         )
@@ -60,6 +63,34 @@ class DayOptimizationDiagnosticKind(str, Enum):
     MATRIX_FAILURE = "matrix_failure"
     INCOMPLETE_MATRIX = "incomplete_matrix"
     MATRIX_SNAPSHOT_MISMATCH = "matrix_snapshot_mismatch"
+    TIME_BUDGET_OVERFLOW = "time_budget_overflow"
+
+
+class DayScheduleItemEstimate(BaseModel):
+    """A deterministic local-time estimate for one item in the proposed order."""
+
+    model_config = ConfigDict(frozen=True)
+
+    item_id: int
+    arrival_time: str
+    departure_time: str
+    travel_minutes_before: int = Field(ge=0)
+    visit_minutes: int = Field(ge=0)
+
+
+class DayScheduleEstimate(BaseModel):
+    """Matrix-backed visit/travel schedule within one local planning window."""
+
+    model_config = ConfigDict(frozen=True)
+
+    start_time: str
+    end_time: str
+    usable_minutes: int = Field(ge=1)
+    travel_minutes: int = Field(ge=0)
+    visit_minutes: int = Field(ge=0)
+    total_minutes: int = Field(ge=0)
+    overflow_minutes: int = Field(ge=0)
+    items: tuple[DayScheduleItemEstimate, ...]
 
 
 class DayOptimizationDiagnostic(BaseModel):
@@ -101,6 +132,7 @@ class DayOptimizationResult(BaseModel):
     starting_item_ids: tuple[int, ...]
     optimized_item_ids: tuple[int, ...]
     cost_comparison: DayCostComparison | None = None
+    schedule: DayScheduleEstimate | None = None
     diagnostics: tuple[DayOptimizationDiagnostic, ...] = ()
 
 
@@ -152,6 +184,7 @@ class TripOptimizer:
         self,
         items: Iterable[DayItemSnapshot],
         profile: RoutingProfile,
+        time_budget: DayTimeBudget | None = None,
     ) -> DayOptimizationResult:
         ordered_items = tuple(sorted(items, key=lambda item: (item.sequence, item.item_id)))
         starting_item_ids = tuple(item.item_id for item in ordered_items)
@@ -178,7 +211,7 @@ class TripOptimizer:
 
         if len(routable) < 2:
             zero_cost = DayRouteCost(duration_s=0, distance_m=0)
-            return DayOptimizationResult(
+            return self._with_schedule(
                 starting_item_ids=starting_item_ids,
                 optimized_item_ids=starting_item_ids,
                 cost_comparison=DayCostComparison(
@@ -187,7 +220,10 @@ class TripOptimizer:
                     duration_saved_s=0,
                     distance_saved_m=0,
                 ),
-                diagnostics=tuple(diagnostics),
+                diagnostics=diagnostics,
+                ordered_items=ordered_items,
+                matrix=None,
+                time_budget=time_budget,
             )
 
         capability = self._routing_provider.capability
@@ -233,7 +269,7 @@ class TripOptimizer:
             tuple(routable[index][1].item_id for index in optimized_indices),
         )
         optimized_cost = self._cost(optimized_indices, matrix_result)
-        return DayOptimizationResult(
+        return self._with_schedule(
             starting_item_ids=starting_item_ids,
             optimized_item_ids=optimized_item_ids,
             cost_comparison=DayCostComparison(
@@ -246,7 +282,120 @@ class TripOptimizer:
                     else starting_cost.distance_m - optimized_cost.distance_m
                 ),
             ),
+            diagnostics=diagnostics,
+            ordered_items=ordered_items,
+            matrix=matrix_result,
+            time_budget=time_budget,
+        )
+
+    @classmethod
+    def _with_schedule(
+        cls,
+        *,
+        starting_item_ids: tuple[int, ...],
+        optimized_item_ids: tuple[int, ...],
+        cost_comparison: DayCostComparison | None,
+        diagnostics: list[DayOptimizationDiagnostic],
+        ordered_items: tuple[DayItemSnapshot, ...],
+        matrix: TravelMatrix | None,
+        time_budget: DayTimeBudget | None,
+    ) -> DayOptimizationResult:
+        schedule = cls._schedule(optimized_item_ids, ordered_items, matrix, time_budget)
+        if schedule is not None and schedule.overflow_minutes:
+            overflow_item_ids = tuple(
+                item.item_id
+                for item in schedule.items
+                if (
+                    _absolute_minutes(item.departure_time)
+                    - _absolute_minutes(time_budget.start_time)
+                    > time_budget.maximum_usable_minutes
+                )
+            )
+            diagnostics.append(
+                DayOptimizationDiagnostic(
+                    kind=DayOptimizationDiagnosticKind.TIME_BUDGET_OVERFLOW,
+                    item_ids=overflow_item_ids,
+                    message=(
+                        f"The proposed day exceeds its {time_budget.maximum_usable_minutes}-minute "
+                        f"window by {schedule.overflow_minutes} minutes"
+                    ),
+                )
+            )
+        return DayOptimizationResult(
+            starting_item_ids=starting_item_ids,
+            optimized_item_ids=optimized_item_ids,
+            cost_comparison=cost_comparison,
+            schedule=schedule,
             diagnostics=tuple(diagnostics),
+        )
+
+    @staticmethod
+    def _schedule(
+        optimized_item_ids: tuple[int, ...],
+        ordered_items: tuple[DayItemSnapshot, ...],
+        matrix: TravelMatrix | None,
+        time_budget: DayTimeBudget | None,
+    ) -> DayScheduleEstimate | None:
+        """Build a schedule only when every travel leg has matrix evidence.
+
+        Missing coordinates deliberately do not become zero-minute travel.  This
+        preserves the provider-neutral no-estimate contract while still retaining
+        those items in the proposed order and diagnostics.
+        """
+
+        if time_budget is None:
+            return None
+        items_by_id = {item.item_id: item for item in ordered_items}
+        proposed_items = tuple(items_by_id[item_id] for item_id in optimized_item_ids)
+        if len(proposed_items) > 1 and (
+            matrix is None or any(item.travel_location() is None for item in proposed_items)
+        ):
+            return None
+
+        matrix_index = (
+            {
+                item.item_id: index
+                for index, item in enumerate(item for item in ordered_items if item.travel_location() is not None)
+            }
+            if matrix is not None
+            else {}
+        )
+        elapsed_minutes = 0
+        travel_minutes = 0
+        estimates: list[DayScheduleItemEstimate] = []
+        previous: DayItemSnapshot | None = None
+        for item in proposed_items:
+            leg_minutes = 0
+            if previous is not None:
+                leg_seconds = matrix.durations_s[matrix_index[previous.item_id]][matrix_index[item.item_id]]
+                if leg_seconds is None:
+                    return None
+                leg_minutes = _round_up_minutes(leg_seconds)
+                elapsed_minutes += leg_minutes
+                travel_minutes += leg_minutes
+            arrival_minutes = elapsed_minutes
+            elapsed_minutes += item.visit_duration_minutes
+            estimates.append(
+                DayScheduleItemEstimate(
+                    item_id=item.item_id,
+                    arrival_time=_format_local_time(time_budget.start_time, arrival_minutes),
+                    departure_time=_format_local_time(time_budget.start_time, elapsed_minutes),
+                    travel_minutes_before=leg_minutes,
+                    visit_minutes=item.visit_duration_minutes,
+                )
+            )
+            previous = item
+
+        visit_minutes = sum(item.visit_duration_minutes for item in proposed_items)
+        return DayScheduleEstimate(
+            start_time=time_budget.start_time,
+            end_time=time_budget.end_time,
+            usable_minutes=time_budget.maximum_usable_minutes,
+            travel_minutes=travel_minutes,
+            visit_minutes=visit_minutes,
+            total_minutes=elapsed_minutes,
+            overflow_minutes=max(0, elapsed_minutes - time_budget.maximum_usable_minutes),
+            items=tuple(estimates),
         )
 
     @staticmethod
@@ -344,3 +493,30 @@ class TripOptimizer:
             duration_s=duration_s,
             distance_m=sum(distance_legs),
         )
+
+
+def _round_up_minutes(seconds: float) -> int:
+    """Round routing seconds upward so a displayed schedule never understates time."""
+
+    return int(-(-seconds // 60))
+
+
+def _format_local_time(start_time: str, elapsed_minutes: int) -> str:
+    start_hour, start_minute = (int(part) for part in start_time.split(":"))
+    absolute_minutes = start_hour * 60 + start_minute + elapsed_minutes
+    day_offset, minute_of_day = divmod(absolute_minutes, 24 * 60)
+    hour, minute = divmod(minute_of_day, 60)
+    suffix = f"+{day_offset}d " if day_offset else ""
+    return f"{suffix}{hour:02d}:{minute:02d}"
+
+
+def _absolute_minutes(value: str) -> int:
+    """Return a formatted local-time estimate as an absolute minute offset."""
+
+    day_offset = 0
+    time_value = value
+    if value.startswith("+"):
+        day_prefix, time_value = value.split("d ", maxsplit=1)
+        day_offset = int(day_prefix[1:])
+    hour, minute = (int(part) for part in time_value.split(":"))
+    return day_offset * 24 * 60 + hour * 60 + minute

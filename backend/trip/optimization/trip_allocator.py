@@ -13,6 +13,7 @@ from enum import Enum
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from .constraints import DayTimeBudget
 from .day_optimizer import (
     DayItemSnapshot,
     DayOptimizationDiagnostic,
@@ -188,10 +189,14 @@ class TripAllocator:
         self._routing_provider = routing_provider
 
     async def allocate(
-        self, settings: TripPlanningSettings, items: Iterable[DayItemSnapshot]
+        self,
+        settings: TripPlanningSettings,
+        items: Iterable[DayItemSnapshot],
+        day_time_budgets: Iterable[DayTimeBudget] | None = None,
     ) -> TripAllocationResult:
         ordered_items = tuple(sorted(items, key=lambda item: (item.sequence, item.item_id)))
         profile = self._profile_from_settings(settings)
+        budgets = self._day_time_budgets(settings.requested_days, day_time_budgets)
         routable = tuple(item for item in ordered_items if item.travel_location() is not None)
         diagnostics: list[TripAllocationDiagnostic] = []
         coordinateless_item_ids = tuple(
@@ -221,6 +226,8 @@ class TripAllocator:
                 diagnostics,
             )
 
+        groups = await self._rebalance_budget_overflow(groups, budgets, profile)
+
         optimizer = TripOptimizer(self._routing_provider)
         days: list[TripAllocationDay] = []
         for day_index, group in enumerate(groups):
@@ -228,7 +235,9 @@ class TripAllocator:
                 TripAllocationDay(
                     day_index=day_index,
                     item_ids=tuple(item.item_id for item in group),
-                    optimization=await optimizer.optimize_day(group, profile),
+                    optimization=await optimizer.optimize_day(
+                        group, profile, budgets[day_index]
+                    ),
                 )
             )
         return TripAllocationResult(
@@ -237,6 +246,82 @@ class TripAllocator:
             days=tuple(days),
             diagnostics=tuple(diagnostics),
         )
+
+    @staticmethod
+    def _day_time_budgets(
+        requested_days: int, day_time_budgets: Iterable[DayTimeBudget] | None
+    ) -> tuple[DayTimeBudget, ...]:
+        if day_time_budgets is None:
+            return tuple(
+                DayTimeBudget(start_time="09:00", end_time="18:00")
+                for _ in range(requested_days)
+            )
+        budgets = tuple(day_time_budgets)
+        if len(budgets) != requested_days:
+            raise ValueError("day_time_budgets must contain one budget per requested day")
+        return budgets
+
+    async def _rebalance_budget_overflow(
+        self,
+        groups: list[list[DayItemSnapshot]],
+        budgets: tuple[DayTimeBudget, ...],
+        profile: RoutingProfile,
+    ) -> list[list[DayItemSnapshot]]:
+        """Move a trailing proposed stop only when it strictly reduces overflow.
+
+        Geographic clustering remains the first allocation input.  This bounded,
+        deterministic pass then uses the selected provider's actual day travel
+        costs plus resolved visits to make spare daily capacity useful.  If a
+        matrix cannot support a schedule, no guessed travel duration is used and
+        the prior stable allocation is retained.
+        """
+
+        optimizer = TripOptimizer(self._routing_provider)
+        for _ in range(sum(len(group) for group in groups)):
+            results = tuple([
+                await optimizer.optimize_day(group, profile, budgets[index])
+                for index, group in enumerate(groups)
+            ])
+            overflow_minutes = tuple(
+                result.schedule.overflow_minutes if result.schedule is not None else None
+                for result in results
+            )
+            if not any(value for value in overflow_minutes):
+                break
+
+            moved = False
+            for source_index, source_result in enumerate(results):
+                if not source_result.schedule or not source_result.schedule.overflow_minutes:
+                    continue
+                for item_id in reversed(source_result.optimized_item_ids):
+                    candidate_item = next(item for item in groups[source_index] if item.item_id == item_id)
+                    for destination_index in range(len(groups)):
+                        if destination_index == source_index:
+                            continue
+                        proposal = [list(group) for group in groups]
+                        proposal[source_index].remove(candidate_item)
+                        proposal[destination_index].append(candidate_item)
+                        proposal_results = tuple([
+                            await optimizer.optimize_day(
+                                group, profile, budgets[index]
+                            )
+                            for index, group in enumerate(proposal)
+                        ])
+                        if any(result.schedule is None for result in proposal_results):
+                            continue
+                        before = sum(value for value in overflow_minutes if value is not None)
+                        after = sum(result.schedule.overflow_minutes for result in proposal_results if result.schedule)
+                        if after < before:
+                            groups = proposal
+                            moved = True
+                            break
+                    if moved:
+                        break
+                if moved:
+                    break
+            if not moved:
+                break
+        return groups
 
     async def _matrix_informed_groups(
         self,

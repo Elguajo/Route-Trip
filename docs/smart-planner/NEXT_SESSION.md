@@ -2,11 +2,11 @@
 
 ## Current phase
 
-Phase 004 — SP-004-02 is next (not authorized)
+Phase 004 — SP-004-03 is next (not authorized)
 
 ## Goal
 
-SP-004-01 is verified. Do not begin SP-004-02 unless explicitly requested.
+SP-004-02 is verified. Do not begin SP-004-03 unless explicitly requested.
 
 ## Already completed
 
@@ -45,10 +45,14 @@ SP-004-01 is verified. Do not begin SP-004-02 unless explicitly requested.
 - `SP-003-04` verified the complete Phase 003 acceptance criteria. A confirmed stale-preview defect was fixed: the whole-trip token now also covers the resolved POI routing snapshots, so changing a POI's coordinates through either its item override or linked `Place` rejects the old preview. Regressions cover changed POI routing input, planner settings, and selected provider; persistence assertions cover the applied POI day/sequence mapping. An isolated browser fixture confirmed Preview does not persist, Cancel clears its local preview, and explicit Apply reloads the trip and rerenders affected-day routes with no console errors. Full validation: `cd backend && .venv/bin/python -m pytest` passed 67 tests; `cd src && npm test -- --watch=false` passed 9 tests; `cd src && npm run build` passed with existing bundle-budget/CommonJS warnings; `git diff --check` passed.
 - `SP-004-01` added Alembic revision `f1c3d9a8e2b4`: existing categories receive a non-null 60-minute default visit duration, old/new days receive `09:00`–`18:00` local planning windows, and itinerary items receive an optional duration override. Existing optional `Place.duration` remains the place override; the pure resolver reports strict item → place → category precedence and source. Day windows must use `HH:MM` and end after start; `DayTimeBudget` derives usable minutes rather than persisting a duplicate. Existing category/day/item endpoints and Angular types expose these additive fields, but there is no time-settings UI or planner calculation change.
 - `SP-004-01` intentionally did not modify `TripAllocator`, `TripOptimizer`, routing providers/matrices, preview/apply payloads, stale snapshots, allocation/order behavior, or direct route handling. It added no fallback or geodesic estimate. Full validation: `cd backend && .venv/bin/python -m pytest` passed 71 tests; `cd src && npm test -- --watch=false` passed 9 tests; `cd src && npm run build` passed with existing bundle-budget/CommonJS warnings; `cd backend && .venv/bin/python -m alembic heads` reports `f1c3d9a8e2b4`; `git diff --check` passed.
+- `SP-004-02` makes `DayItemSnapshot` carry the resolved item → place → category visit duration and has `TripOptimizer` emit matrix-backed local schedule estimates (arrival/departure, travel/visit/total/overflow minutes). Travel seconds are rounded up to whole display minutes, so the schedule never understates provider time. Missing coordinates or an unavailable/incomplete matrix receive existing diagnostics and never become zero-minute/geodesic travel.
+- A day result with a non-zero overflow emits `time_budget_overflow` and names the items whose departure falls outside the window; it keeps every item in the proposed order. `TripAllocator` supplies one `DayTimeBudget` per prospective day, retains geographic clustering, and makes only deterministic POI moves that strictly reduce total overflow. An irreducible over-budget allocation is returned intact with its schedule/diagnostic.
+- Whole-trip previews use persisted windows for existing target days and 09:00–18:00 for prospective new days; those windows are included in the existing stale token. Direct day preview/apply has the same schedule output. No migration, provider fallback, direct OSRM access, geodesic estimate, UI/timeline, or direct-route change was added.
+- `backend/tests/test_day_optimizer.py` verifies a 09:00–18:00 fixture with 600 visit minutes and 90 matrix travel minutes produces a 150-minute overflow and exact estimates. `test_trip_allocator.py` verifies budget rebalancing retains every POI, and `test_optimize_trip_api.py` verifies persisted day/default duration inputs reach non-mutating whole-trip preview. Full validation: `cd backend && .venv/bin/python -m pytest` passed 74 tests; `cd src && npm test -- --watch=false` passed 9 tests; `cd src && npm run build` passed with existing bundle-budget/CommonJS warnings; `git diff --check` passed.
 
 ## Next task
 
-`SP-004-01` is complete. Do not start `SP-004-02` unless explicitly directed; preserve Phase 001–003 contracts and the Phase 004 duration/day-window policy.
+`SP-004-02` is complete. Do not start `SP-004-03` unless explicitly directed; preserve Phase 001–003 contracts and the Phase 004 duration/day-window/budget policy.
 
 ## Files to read
 
@@ -60,7 +64,7 @@ SP-004-01 is verified. Do not begin SP-004-02 unless explicitly requested.
 
 ## Files likely to modify
 
-- `backend/trip/optimization/constraints.py` and `backend/trip/optimization/trip_allocator.py` for SP-004-02 only after explicit authorization. Keep allocation non-persisting and provider-neutral.
+- Frontend time-window/duration editing and timeline presentation files for SP-004-03 only after explicit authorization. Keep planner application explicit and do not alter provider-neutral calculation contracts.
 
 ## Important decisions
 
@@ -78,6 +82,7 @@ SP-004-01 is verified. Do not begin SP-004-02 unless explicitly requested.
 - Whole-trip apply is another explicit compare-and-apply boundary: it requires the previewed POI `(id, day, sequence)` snapshot and a token covering saved settings, selected provider, and target days, recalculates server-side, and updates only POIs. Generic itinerary items are retained in place and keep their sequence; only required non-empty target days are created.
 - Whole-trip stale tokens also cover the resolved POI routing snapshots, closing the case where a linked POI coordinate changes without changing its assignment or sequence.
 - Visit estimates are integer minutes: optional item override wins over the existing optional Place override, then the persisted category default. Day windows are same-day local `HH:MM` values; their usable duration is derived and Phase 004-01 does not apply it to allocation/order.
+- Budget schedules use complete selected-provider matrix legs plus resolved visit minutes. Routing seconds are rounded up to display minutes; no matrix evidence means no schedule estimate rather than a fabricated zero-minute/geodesic leg. Allocation may move a POI only when its deterministic candidate reduces aggregate overflow; otherwise it reports overflow without dropping an eligible POI.
 
 ## Blockers
 

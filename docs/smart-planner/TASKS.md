@@ -64,7 +64,10 @@
     [x] Persist category defaults, optional item overrides, and compatible per-day 09:00–18:00 time-window defaults.
     [x] Resolve duration deterministically as item override → existing place override → category default, with validated positive day windows.
     [x] Preserve existing provider-neutral routing, allocation/order, and explicit preview/apply contracts; no budget integration or UI was added.
-[ ] SP-004-02 — Make allocation/order budget-aware and report overflow. ([phase](phases/004-time-budget.md))
+[x] SP-004-02 — Make allocation/order budget-aware and report overflow. (completed 2026-09-06; `cd backend && .venv/bin/python -m pytest`: 74 passed; `cd src && npm test -- --watch=false`: 9 passed; `cd src && npm run build` passed; `git diff --check` passed; [phase](phases/004-time-budget.md))
+    [x] Include resolved visit duration and matrix-backed travel in prospective allocation and day-order schedules.
+    [x] Return deterministic arrival/departure estimates and explicit overflow diagnostics without dropping eligible POIs.
+    [x] Preserve provider-neutral matrices, non-mutating preview, explicit apply, and direct-route compatibility; no migration was required.
 [ ] SP-004-03 — Expose/edit time estimates and validate budgets. ([phase](phases/004-time-budget.md))
 
 ## Phase 005 — Live trip

@@ -42,11 +42,11 @@ from ..models.models import (Image, ItemImageInput,
 from ..optimization import (DayItemSnapshot, DayManualReorderRequest, DayOptimizationApplyRequest,
                             DayOptimizationApplyResult,
                             DayOptimizationPreviewRequest,
-                            DayOptimizationResult, OSRMTableRoutingProvider,
+                            DayOptimizationResult, DayTimeBudget, OSRMTableRoutingProvider,
                             TravelMatrixCache, TripAllocator, TripOptimizationApplyRequest,
                             TripOptimizationApplyResult, TripOptimizationPreviewResult,
                             TripPlanningSettings, TripPlanningSnapshotAssignment,
-                            TripPlanningTotals, TripOptimizer)
+                            TripPlanningTotals, TripOptimizer, resolve_visit_duration)
 from ..utils.date import dt_utc
 from ..utils.ical import build_trip_ics, ics_filename
 from ..utils.link_titles import resolve_links
@@ -85,6 +85,7 @@ def _ordered_day_items(session: SessionDep, day_id: int) -> list[TripItem]:
     return list(
         session.exec(
             select(TripItem)
+            .options(selectinload(TripItem.place).selectinload(Place.category))
             .where(TripItem.day_id == day_id)
             .order_by(TripItem.sequence, TripItem.id)
         )
@@ -129,7 +130,7 @@ def _eligible_trip_planning_items(session: SessionDep, trip_id: int) -> list[Tri
         session.exec(
             select(TripItem)
             .join(TripDay)
-            .options(selectinload(TripItem.place))
+            .options(selectinload(TripItem.place).selectinload(Place.category))
             .where(TripDay.trip_id == trip_id, TripItem.place_id.is_not(None))
             .order_by(TripItem.day_id, TripItem.sequence, TripItem.id)
         )
@@ -145,6 +146,7 @@ def _planning_item_snapshots(items: list[TripItem]) -> tuple[DayItemSnapshot, ..
             sequence=item.sequence,
             lat=item.lat if item.lat is not None else item.place.lat if item.place else None,
             lng=item.lng if item.lng is not None else item.place.lng if item.place else None,
+            visit_duration_minutes=resolve_visit_duration(item).minutes,
         )
         for item in items
     )
@@ -162,6 +164,7 @@ def _planning_snapshot_token(
     assignments: tuple[TripPlanningSnapshotAssignment, ...],
     item_snapshots: tuple[DayItemSnapshot, ...],
     target_day_ids: tuple[int | None, ...],
+    day_time_budgets: tuple[DayTimeBudget, ...],
     routing_provider: str,
 ) -> str:
     """Bind apply to every persisted input that can change this proposal.
@@ -177,6 +180,7 @@ def _planning_snapshot_token(
         "assignments": [assignment.model_dump(mode="json") for assignment in assignments],
         "item_snapshots": [item.model_dump(mode="json") for item in item_snapshots],
         "target_day_ids": target_day_ids,
+        "day_time_budgets": [budget.model_dump(mode="json") for budget in day_time_budgets],
         "routing_provider": routing_provider,
     }
     return sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
@@ -197,6 +201,19 @@ def _planning_totals(allocation) -> TripPlanningTotals | None:
     )
 
 
+def _planning_day_time_budgets(
+    existing_days: tuple[TripDay, ...], requested_days: int
+) -> tuple[DayTimeBudget, ...]:
+    """Use each persisted target-day window and the migration default for new days."""
+
+    return tuple(
+        DayTimeBudget.from_day(existing_days[index])
+        if index < len(existing_days)
+        else DayTimeBudget(start_time="09:00", end_time="18:00")
+        for index in range(requested_days)
+    )
+
+
 async def _whole_trip_preview(
     session: SessionDep, trip_id: int, current_user: str
 ) -> tuple[TripOptimizationPreviewResult, list[TripItem]]:
@@ -208,19 +225,26 @@ async def _whole_trip_preview(
     items = _eligible_trip_planning_items(session, trip_id)
     assignments = _planning_assignments(items)
     item_snapshots = _planning_item_snapshots(items)
-    existing_day_ids = tuple(day.id for day in _ordered_trip_days(session, trip_id))
+    existing_days = tuple(_ordered_trip_days(session, trip_id))
+    existing_day_ids = tuple(day.id for day in existing_days)
     target_day_ids = tuple(
         existing_day_ids[index] if index < len(existing_day_ids) else None
         for index in range(settings.requested_days)
     )
+    day_time_budgets = _planning_day_time_budgets(existing_days, settings.requested_days)
     allocation = await _trip_allocator_for_user(session, current_user).allocate(
-        settings, item_snapshots
+        settings, item_snapshots, day_time_budgets
     )
     return (
         TripOptimizationPreviewResult(
             starting_assignments=assignments,
             snapshot_token=_planning_snapshot_token(
-                settings, assignments, item_snapshots, target_day_ids, user.map_provider.value
+                settings,
+                assignments,
+                item_snapshots,
+                target_day_ids,
+                day_time_budgets,
+                user.map_provider.value,
             ),
             target_day_ids=target_day_ids,
             allocation=allocation,
@@ -681,10 +705,10 @@ async def preview_optimize_day(
     """Calculate one accessible day's order without changing its persisted sequence."""
 
     _get_verified_trip(session, trip_id, current_user)
-    _get_trip_day_or_404(session, trip_id, day_id)
+    day = _get_trip_day_or_404(session, trip_id, day_id)
     items = _ordered_day_items(session, day_id)
     return await _day_optimizer_for_user(session, current_user).optimize_day(
-        DayItemSnapshot.from_trip_items(items), data.profile
+        DayItemSnapshot.from_trip_items(items), data.profile, DayTimeBudget.from_day(day)
     )
 
 
@@ -789,14 +813,14 @@ async def apply_optimize_day(
     trip = _get_verified_trip(session, trip_id, current_user)
     if trip.archived:
         raise HTTPException(status_code=400, detail="Bad request")
-    _get_trip_day_or_404(session, trip_id, day_id)
+    day = _get_trip_day_or_404(session, trip_id, day_id)
     items = _ordered_day_items(session, day_id)
     starting_item_ids = tuple(item.id for item in items)
     if starting_item_ids != data.starting_item_ids:
         raise HTTPException(status_code=409, detail="Day itinerary changed; preview it again before applying")
 
     result = await _day_optimizer_for_user(session, current_user).optimize_day(
-        DayItemSnapshot.from_trip_items(items), data.profile
+        DayItemSnapshot.from_trip_items(items), data.profile, DayTimeBudget.from_day(day)
     )
     if result.cost_comparison is None:
         raise HTTPException(status_code=422, detail="Day cannot be optimized with the current routing matrix")

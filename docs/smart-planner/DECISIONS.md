@@ -135,3 +135,13 @@
 **Why:** Categories are already user-owned reusable POI taxonomy, while an item can need a one-off estimate without changing the underlying place. The day is the natural owner of a date-local window. Defaults make existing data immediately readable and deterministic, without changing current routing or allocation behaviour.
 
 **Alternatives considered:** A new global duration-settings table; copying a category duration to every place/item; storing a separate maximum-budget column; or interpreting overnight windows. Those either duplicate existing policy, make later category changes opaque, invite inconsistent data, or require an unrequested timezone/overnight scheduling model. Budget-aware calculation remains SP-004-02.
+
+## ADR-015 — Budget schedules are matrix-backed, complete, and non-dropping
+
+**Status:** Accepted
+
+**Decision:** Carry the resolved integer visit estimate into immutable day snapshots. When a complete selected-provider matrix supports every proposed leg, build the local schedule from the day start time, round each travel leg upward to whole minutes, and add each visit in optimized order. Return arrivals/departures, travel/visit/total/overflow minutes, and a `time_budget_overflow` diagnostic naming late departures. Use persisted target-day windows (or the existing 09:00–18:00 default for new prospective days) during allocation; retain geographic clusters unless a deterministic move strictly reduces aggregate overflow. Keep every eligible POI even when overflow is irreducible.
+
+**Why:** A display estimate must not understate provider travel time or fabricate it for coordinate-less/unroutable legs. Strictly improving rebalance makes available day capacity useful without turning allocation into an unbounded heuristic or weakening Phase 003's complete-matrix policy. Retaining overflow makes an impossible plan visible and preserves user intent for explicit review/apply.
+
+**Alternatives considered:** Treat unavailable travel as zero; estimate it geodesically; remove/unallocate overflowed POIs; or reject any overflow preview/apply. Those respectively violate the routing contract, hide uncertainty, lose eligible POIs, or make an explicit preview unable to show the complete planning problem.

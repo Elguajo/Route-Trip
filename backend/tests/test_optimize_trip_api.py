@@ -234,6 +234,38 @@ def test_whole_trip_preview_reports_invalid_coordinates_without_dropping_the_poi
     assert body["allocation"]["diagnostics"][0]["item_ids"] == [4]
 
 
+def test_whole_trip_preview_uses_day_window_visits_and_travel_for_overflow(
+    optimize_trip_api: TestClient, mock_routing_http
+) -> None:
+    mock_routing_http(_matrix_response)
+    with Session(optimize_trip_api.app.state.optimize_trip_engine) as session:
+        settings = session.get(TripPlannerSettings, 1)
+        assert settings is not None
+        settings.requested_days = 1
+        for item_id in range(1, 5):
+            item = session.get(TripItem, item_id)
+            assert item is not None
+            item.duration = 150
+        session.commit()
+
+    response = _preview(optimize_trip_api)
+
+    assert response.status_code == 200
+    day = response.json()["allocation"]["days"][0]
+    schedule = day["optimization"]["schedule"]
+    assert schedule["start_time"] == "09:00"
+    assert schedule["end_time"] == "18:00"
+    assert schedule["visit_minutes"] == 600
+    assert schedule["travel_minutes"] == 16
+    assert schedule["total_minutes"] == 616
+    assert schedule["overflow_minutes"] == 76
+    assert schedule["items"][0]["arrival_time"] == "09:00"
+    assert all(item["departure_time"] for item in schedule["items"])
+    assert sum(item["travel_minutes_before"] for item in schedule["items"]) == schedule["travel_minutes"]
+    assert day["optimization"]["optimized_item_ids"] == [1, 2, 3, 4]
+    assert day["optimization"]["diagnostics"][-1]["kind"] == "time_budget_overflow"
+
+
 def test_whole_trip_apply_rolls_back_day_creation_and_assignments_on_failure(
     optimize_trip_api: TestClient, mock_routing_http
 ) -> None:
