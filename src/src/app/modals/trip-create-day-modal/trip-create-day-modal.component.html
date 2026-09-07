@@ -15,6 +15,20 @@
                 t('common.fields.date') }}</label>
             </p-floatlabel>
 
+            <p-floatlabel variant="in">
+              <input id="start_time" type="time" formControlName="start_time" pInputText fluid />
+              <label for="start_time">Start time</label>
+            </p-floatlabel>
+
+            <p-floatlabel variant="in">
+              <input id="end_time" type="time" formControlName="end_time" pInputText fluid />
+              <label for="end_time">End time</label>
+            </p-floatlabel>
+
+            @if (dayForm.errors?.['timeWindow']) {
+            <p class="col-span-full text-sm text-red-600 dark:text-red-400" role="alert">End time must be later than start time.</p>
+            }
+
             <div class="relative col-span-full"> <textarea pTextarea id="notes"
                 [placeholder]="t('modals.day.day_notes')" formControlName="notes" rows="4" fluid
                 class="pr-12!"></textarea> @if
@@ -58,6 +72,20 @@
           appendTo="body" fluid /> <label for="date">{{
           t('common.fields.date') }}</label>
       </p-floatlabel>
+
+      <p-floatlabel variant="in">
+        <input id="start_time" type="time" formControlName="start_time" pInputText fluid />
+        <label for="start_time">Start time</label>
+      </p-floatlabel>
+
+      <p-floatlabel variant="in">
+        <input id="end_time" type="time" formControlName="end_time" pInputText fluid />
+        <label for="end_time">End time</label>
+      </p-floatlabel>
+
+      @if (dayForm.errors?.['timeWindow']) {
+      <p class="col-span-full text-sm text-red-600 dark:text-red-400" role="alert">End time must be later than start time.</p>
+      }
 
       <div class="relative col-span-full"> <textarea pTextarea id="notes" [placeholder]="t('modals.day.day_notes')"
           formControlName="notes" rows="4" fluid class="pr-12!"></textarea> @if (dayForm.get('notes')?.value)

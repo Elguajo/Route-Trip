@@ -16,6 +16,11 @@
             [ngModelOptions]="{ standalone: true }" appendTo="body" [pt]="{ panel: 'right-0! left-auto!' }" />
         </div>
       </div>
+
+      <p-floatlabel variant="in">
+        <input id="default_duration" formControlName="default_duration" pInputText appNumber fluid />
+        <label for="default_duration">{{ t('common.default') }} {{ t('modals.place.duration') }}</label>
+      </p-floatlabel>
     </div>
 
     <input type="file" accept="image/*" #fileInput class="hidden" (change)="onFileSelected($event)" />

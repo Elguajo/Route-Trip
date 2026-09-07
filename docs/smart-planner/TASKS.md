@@ -68,7 +68,10 @@
     [x] Include resolved visit duration and matrix-backed travel in prospective allocation and day-order schedules.
     [x] Return deterministic arrival/departure estimates and explicit overflow diagnostics without dropping eligible POIs.
     [x] Preserve provider-neutral matrices, non-mutating preview, explicit apply, and direct-route compatibility; no migration was required.
-[ ] SP-004-03 — Expose/edit time estimates and validate budgets. ([phase](phases/004-time-budget.md))
+[x] SP-004-03 — Expose/edit time estimates and validate budgets. (completed 2026-09-06; `cd backend && .venv/bin/python -m pytest`: 74 passed; `cd src && npm test -- --watch=false`: 11 passed; `cd src && npm run build` passed; `git diff --check` passed; [phase](phases/004-time-budget.md))
+    [x] Edit category defaults, place/item overrides, and existing day start/end windows through the existing category/place/item/day contracts.
+    [x] Render non-mutating day and whole-trip preview timelines with arrival/departure, travel, visit, total, and explicit overflow while retaining every eligible POI.
+    [x] Add frontend preview/window-reconciliation coverage and backend API persistence coverage for category/place/item/day time inputs.
 
 ## Phase 005 — Live trip
 

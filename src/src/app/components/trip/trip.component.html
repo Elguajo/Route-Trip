@@ -340,7 +340,28 @@
                   }
                   <ol class="mt-3 space-y-1 text-xs text-primary-700 dark:text-primary-200" aria-label="Planned day allocation">
                     @for (day of tripPlanPreview.allocation.days; track day.day_index) {
-                    <li>Day {{ day.day_index + 1 }}: {{ day.optimization.optimized_item_ids.length }} POIs</li>
+                    <li>Day {{ day.day_index + 1 }}: {{ day.optimization.optimized_item_ids.length }} POIs
+                      @if (day.optimization.schedule; as schedule) {
+                      <section class="mt-2 rounded border border-primary-200 bg-primary-50/70 p-2 dark:border-primary-700 dark:bg-primary-950/30"
+                        [attr.aria-label]="'Day ' + (day.day_index + 1) + ' time budget timeline'">
+                        <div class="flex flex-wrap justify-between gap-x-3 gap-y-1 text-primary-700 dark:text-primary-200">
+                          <span>{{ schedule.start_time }}–{{ schedule.end_time }}</span>
+                          <span>Travel {{ formatPlanningMinutes(schedule.travel_minutes) }} · Visit {{ formatPlanningMinutes(schedule.visit_minutes) }} · Total {{ formatPlanningMinutes(schedule.total_minutes) }}</span>
+                        </div>
+                        @if (schedule.overflow_minutes > 0) {
+                        <p class="mt-1 font-medium text-red-700 dark:text-red-300" role="alert">Over budget by {{ formatPlanningMinutes(schedule.overflow_minutes) }}.</p>
+                        }
+                        <ol class="mt-2 space-y-1" aria-label="Arrival and departure estimates">
+                          @for (estimate of schedule.items; track estimate.item_id) {
+                          <li class="flex flex-wrap justify-between gap-x-2 gap-y-1">
+                            <span>{{ plannerItemName(estimate.item_id) }}</span>
+                            <span>Arrive {{ estimate.arrival_time }} · Travel {{ formatPlanningMinutes(estimate.travel_minutes_before) }} · Visit {{ formatPlanningMinutes(estimate.visit_minutes) }} · Depart {{ estimate.departure_time }}</span>
+                          </li>
+                          }
+                        </ol>
+                      </section>
+                      }
+                    </li>
                     }
                   </ol>
                   @if (tripPlanPreview.allocation.diagnostics.length) {
@@ -1346,6 +1367,35 @@
               </dl>
               } @else {
               <p class="mt-2 text-xs text-primary-600 dark:text-primary-300">No complete routing matrix is available, so this preview cannot be applied.</p>
+              }
+              @if (preview.schedule; as schedule) {
+              <section class="mt-3 rounded border border-primary-200 bg-primary-50/70 p-3 text-xs dark:border-primary-700 dark:bg-primary-950/30"
+                [attr.aria-label]="'Day ' + day.label + ' time budget timeline'">
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                  <span class="font-medium text-primary-900 dark:text-primary-100">Time budget timeline</span>
+                  <span>{{ schedule.start_time }}–{{ schedule.end_time }} · {{ formatPlanningMinutes(schedule.usable_minutes) }} available</span>
+                </div>
+                <dl class="mt-2 grid gap-2 sm:grid-cols-3">
+                  <div><dt class="text-primary-500">Travel</dt><dd class="font-medium">{{ formatPlanningMinutes(schedule.travel_minutes) }}</dd></div>
+                  <div><dt class="text-primary-500">Visit</dt><dd class="font-medium">{{ formatPlanningMinutes(schedule.visit_minutes) }}</dd></div>
+                  <div><dt class="text-primary-500">Total</dt><dd class="font-medium">{{ formatPlanningMinutes(schedule.total_minutes) }}</dd></div>
+                </dl>
+                @if (schedule.overflow_minutes > 0) {
+                <p class="mt-2 rounded border border-red-300 bg-red-50 px-2 py-1.5 font-medium text-red-800 dark:border-red-800 dark:bg-red-950/40 dark:text-red-200"
+                  role="alert">Over budget by {{ formatPlanningMinutes(schedule.overflow_minutes) }}. All eligible places remain in this preview.</p>
+                }
+                <ol class="mt-3 space-y-1.5" aria-label="Arrival and departure estimates">
+                  @for (estimate of schedule.items; track estimate.item_id) {
+                  <li class="rounded border border-primary-200 bg-white px-2 py-1.5 dark:border-primary-800 dark:bg-primary-900">
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                      <span class="font-medium text-primary-900 dark:text-primary-100">{{ plannerItemName(estimate.item_id) }}</span>
+                      <span>Arrival {{ estimate.arrival_time }} · Departure {{ estimate.departure_time }}</span>
+                    </div>
+                    <div class="mt-1 text-primary-600 dark:text-primary-300">Travel {{ formatPlanningMinutes(estimate.travel_minutes_before) }} · Visit {{ formatPlanningMinutes(estimate.visit_minutes) }}</div>
+                  </li>
+                  }
+                </ol>
+              </section>
               }
               <p class="mt-3 text-xs text-primary-600 dark:text-primary-300">Suggested order: {{ preview.optimized_item_ids.join(' → ') }}</p>
               @if (preview.diagnostics.length) {

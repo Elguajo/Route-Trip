@@ -3225,6 +3225,15 @@ export class TripComponent implements AfterViewInit, OnDestroy {
     return [...day.items].sort((a, b) => a.sequence - b.sequence || a.id - b.id);
   }
 
+  plannerItemName(itemId: number): string {
+    const item = this.trip()?.days.flatMap((day) => day.items).find((candidate) => candidate.id === itemId);
+    return item?.place?.name || item?.text || `Item ${itemId}`;
+  }
+
+  formatPlanningMinutes(minutes: number): string {
+    return `${minutes} min`;
+  }
+
   previewTripPlan(): void {
     const trip = this.trip();
     if (!trip || trip.archived) return;

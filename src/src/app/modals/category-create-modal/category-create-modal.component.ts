@@ -8,6 +8,7 @@ import { FocusTrapModule } from 'primeng/focustrap';
 import { ColorPickerModule } from 'primeng/colorpicker';
 import { Category } from '../../types/poi';
 import { TranslocoDirective } from '@jsverse/transloco';
+import { NumberInputDirective } from '../../shared/number-input.directive';
 
 @Component({
   selector: 'app-category-create-modal',
@@ -17,6 +18,7 @@ import { TranslocoDirective } from '@jsverse/transloco';
     FormsModule,
     ButtonModule,
     ColorPickerModule,
+    NumberInputDirective,
     ReactiveFormsModule,
     FocusTrapModule,
     TranslocoDirective,
@@ -51,6 +53,7 @@ export class CategoryCreateModalComponent {
         },
       ],
       image: null,
+      default_duration: [60, [Validators.required, Validators.min(0), Validators.max(1_440)]],
     });
 
     const patchValue = this.config.data?.category as Category | undefined;

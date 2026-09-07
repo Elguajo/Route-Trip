@@ -17,7 +17,7 @@ from trip.config import get_settings
 from trip.deps import get_session
 from trip.models.models import Trip, TripDay, User
 from trip.optimization import DayTimeBudget, VisitDurationSource, resolve_visit_duration
-from trip.routers import categories, trips
+from trip.routers import categories, places, trips
 from trip.security import create_access_token
 
 
@@ -110,6 +110,7 @@ def time_budget_api(monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
 
     app = FastAPI()
     app.include_router(categories.router)
+    app.include_router(places.router)
     app.include_router(trips.router)
     app.state.time_budget_engine = engine
 
@@ -137,6 +138,37 @@ def test_duration_and_day_time_settings_are_persisted_by_existing_contracts(
     assert category.status_code == 200
     assert category.json()["default_duration"] == 45
 
+    updated_category = time_budget_api.put(
+        f"/api/categories/{category.json()['id']}",
+        json={"default_duration": 50},
+        headers=_auth(),
+    )
+    assert updated_category.status_code == 200
+    assert updated_category.json()["default_duration"] == 50
+
+    place = time_budget_api.post(
+        "/api/places",
+        json={
+            "name": "Museum",
+            "place": "Test address",
+            "lat": 41.0,
+            "lng": 12.0,
+            "category_id": category.json()["id"],
+            "duration": 30,
+        },
+        headers=_auth(),
+    )
+    assert place.status_code == 200
+    assert place.json()["duration"] == 30
+
+    updated_place = time_budget_api.put(
+        f"/api/places/{place.json()['id']}",
+        json={"duration": 40},
+        headers=_auth(),
+    )
+    assert updated_place.status_code == 200
+    assert updated_place.json()["duration"] == 40
+
     created_day = time_budget_api.post(
         "/api/trips/1/days",
         json={"label": "Day one"},
@@ -163,6 +195,14 @@ def test_duration_and_day_time_settings_are_persisted_by_existing_contracts(
     )
     assert item.status_code == 200
     assert item.json()["duration"] == 75
+
+    updated_item = time_budget_api.put(
+        f"/api/trips/1/days/{day_id}/items/{item.json()['id']}",
+        json={"duration": 90},
+        headers=_auth(),
+    )
+    assert updated_item.status_code == 200
+    assert updated_item.json()["duration"] == 90
 
     invalid_window = time_budget_api.put(
         f"/api/trips/1/days/{day_id}",

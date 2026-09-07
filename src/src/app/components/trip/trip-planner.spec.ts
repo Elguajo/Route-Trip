@@ -33,7 +33,31 @@ const preview: DayOptimizationResult = {
     duration_saved_s: 180,
     distance_saved_m: 400,
   },
-  schedule: null,
+  schedule: {
+    start_time: '09:00',
+    end_time: '10:00',
+    usable_minutes: 60,
+    travel_minutes: 10,
+    visit_minutes: 60,
+    total_minutes: 70,
+    overflow_minutes: 10,
+    items: [
+      {
+        item_id: 1,
+        arrival_time: '09:00',
+        departure_time: '09:30',
+        travel_minutes_before: 0,
+        visit_minutes: 30,
+      },
+      {
+        item_id: 2,
+        arrival_time: '09:40',
+        departure_time: '10:10',
+        travel_minutes_before: 10,
+        visit_minutes: 30,
+      },
+    ],
+  },
   diagnostics: [{ kind: 'coordinateless_item', item_ids: [], message: 'A diagnostic' }],
 };
 
@@ -90,6 +114,20 @@ describe('TripComponent planner flow', () => {
     expect(component.plannerPreview()).toEqual(preview);
     expect(component.plannerPreviewFor(day).diagnostics).toEqual(preview.diagnostics);
     expect(component.trip().days[0].items.map((item: any) => item.id)).toEqual([1, 2]);
+  });
+
+  it('keeps a matrix-backed time budget timeline in the local preview without applying it', () => {
+    const component = plannerComponent();
+    component.dayPlanner = { preview: jasmine.createSpy().and.returnValue(of(preview)) };
+
+    component.previewOptimizeDay(day);
+
+    const schedule = component.plannerPreviewFor(day).schedule;
+    expect(schedule).toEqual(preview.schedule);
+    expect(component.plannerItemName(schedule!.items[1].item_id)).toBe('Second');
+    expect(component.formatPlanningMinutes(schedule!.total_minutes)).toBe('70 min');
+    expect(schedule!.overflow_minutes).toBe(10);
+    expect(component.dayPlanner.apply).toBeUndefined();
   });
 
   it('surfaces preview errors without exposing an Apply action state', () => {
@@ -164,6 +202,19 @@ describe('TripComponent planner flow', () => {
 
     expect(component.trip().days).toEqual([updatedDay]);
     expect(component.dayRouting).toHaveBeenCalledWith(updatedDay, true);
+  });
+
+  it('reconciles a saved day window without changing its item order', () => {
+    const component = plannerComponent();
+    component.dayRouting = jasmine.createSpy('dayRouting');
+    component.replaceSelectedDay = (TripComponent.prototype as any).replaceSelectedDay.bind(component);
+    const updatedDay = { ...day, start_time: '10:00', end_time: '17:30' };
+
+    component.replaceSelectedDay(updatedDay);
+
+    expect(component.trip().days[0].start_time).toBe('10:00');
+    expect(component.trip().days[0].end_time).toBe('17:30');
+    expect(component.trip().days[0].items.map((item: any) => item.id)).toEqual([1, 2]);
   });
 
   it('keeps a whole-trip preview local until explicit Apply and lets the user cancel it', () => {

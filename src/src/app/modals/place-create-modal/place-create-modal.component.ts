@@ -100,7 +100,7 @@ export class PlaceCreateModalComponent {
       ],
       category: [null, Validators.required],
       description: null,
-      duration: [null, Validators.pattern('\\d+')],
+      duration: [null, [Validators.pattern('\\d+'), Validators.min(0), Validators.max(1_440)]],
       price: null,
       allowdog: false,
       restroom: false,

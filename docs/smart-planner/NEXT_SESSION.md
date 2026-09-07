@@ -2,11 +2,11 @@
 
 ## Current phase
 
-Phase 004 — SP-004-03 is next (not authorized)
+Phase 004 — complete; Phase 005 is next (not authorized)
 
 ## Goal
 
-SP-004-02 is verified. Do not begin SP-004-03 unless explicitly requested.
+SP-004-03 is verified. Do not begin Phase 005 unless explicitly requested.
 
 ## Already completed
 
@@ -49,10 +49,13 @@ SP-004-02 is verified. Do not begin SP-004-03 unless explicitly requested.
 - A day result with a non-zero overflow emits `time_budget_overflow` and names the items whose departure falls outside the window; it keeps every item in the proposed order. `TripAllocator` supplies one `DayTimeBudget` per prospective day, retains geographic clustering, and makes only deterministic POI moves that strictly reduce total overflow. An irreducible over-budget allocation is returned intact with its schedule/diagnostic.
 - Whole-trip previews use persisted windows for existing target days and 09:00–18:00 for prospective new days; those windows are included in the existing stale token. Direct day preview/apply has the same schedule output. No migration, provider fallback, direct OSRM access, geodesic estimate, UI/timeline, or direct-route change was added.
 - `backend/tests/test_day_optimizer.py` verifies a 09:00–18:00 fixture with 600 visit minutes and 90 matrix travel minutes produces a 150-minute overflow and exact estimates. `test_trip_allocator.py` verifies budget rebalancing retains every POI, and `test_optimize_trip_api.py` verifies persisted day/default duration inputs reach non-mutating whole-trip preview. Full validation: `cd backend && .venv/bin/python -m pytest` passed 74 tests; `cd src && npm test -- --watch=false` passed 9 tests; `cd src && npm run build` passed with existing bundle-budget/CommonJS warnings; `git diff --check` passed.
+- `SP-004-03` adds category default-duration, place-duration, item-duration, and day start/end-window controls using their existing API contracts; the place control now also enforces the backend's 0–1,440-minute range in the UI. Category/item overrides and day windows are saved inputs, not planner application actions.
+- Day and whole-trip previews now render the existing SP-004-02 schedule: daily travel/visit/total minutes, every stop's arrival/departure and travel/visit estimate, and a prominent explicit overflow alert. Timelines are preview-only; overflowed eligible POIs remain visible and no provider fallback, geodesic estimate, or direct-route change was added.
+- `backend/tests/test_time_budget_settings.py` now covers category/place/item duration updates and day-window persistence through existing API contracts. `src/src/app/components/trip/trip-planner.spec.ts` covers local time-budget schedule display data and day-window reconciliation without implicit Apply. Full validation: `cd backend && .venv/bin/python -m pytest` passed 74 tests; `cd src && npm test -- --watch=false` passed 11 tests; `cd src && npm run build` passed with existing bundle-budget/CommonJS warnings; `git diff --check` passed.
 
 ## Next task
 
-`SP-004-02` is complete. Do not start `SP-004-03` unless explicitly directed; preserve Phase 001–003 contracts and the Phase 004 duration/day-window/budget policy.
+`SP-004-03` completes Phase 004. Do not start Phase 005 unless explicitly directed; preserve Phase 001–004 contracts, including the duration/day-window/budget policy and explicit preview/apply boundary.
 
 ## Files to read
 
@@ -64,7 +67,7 @@ SP-004-02 is verified. Do not begin SP-004-03 unless explicitly requested.
 
 ## Files likely to modify
 
-- Frontend time-window/duration editing and timeline presentation files for SP-004-03 only after explicit authorization. Keep planner application explicit and do not alter provider-neutral calculation contracts.
+- Phase 005 files only after explicit authorization. Preserve planner application as explicit and do not alter provider-neutral calculation contracts.
 
 ## Important decisions
 

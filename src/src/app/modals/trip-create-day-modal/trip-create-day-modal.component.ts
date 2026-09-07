@@ -1,5 +1,5 @@
 import { Component, HostListener } from '@angular/core';
-import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
+import { AbstractControl, FormBuilder, FormGroup, ReactiveFormsModule, ValidationErrors, Validators } from '@angular/forms';
 import { ButtonModule } from 'primeng/button';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { FloatLabelModule } from 'primeng/floatlabel';
@@ -12,6 +12,14 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { TabsModule } from 'primeng/tabs';
 import { TranslocoDirective } from '@jsverse/transloco';
 import { TooltipModule } from 'primeng/tooltip';
+
+const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+function timeWindowValidator(control: AbstractControl): ValidationErrors | null {
+  const { start_time, end_time } = control.value ?? {};
+  if (!TIME_PATTERN.test(start_time ?? '') || !TIME_PATTERN.test(end_time ?? '')) return null;
+  return start_time < end_time ? null : { timeWindow: true };
+}
 
 @Component({
   selector: 'app-trip-create-day-modal',
@@ -55,7 +63,9 @@ export class TripCreateDayModalComponent {
       dt: null,
       label: ['', Validators.required],
       notes: null,
-    });
+      start_time: ['09:00', [Validators.required, Validators.pattern(TIME_PATTERN)]],
+      end_time: ['18:00', [Validators.required, Validators.pattern(TIME_PATTERN)]],
+    }, { validators: timeWindowValidator });
 
     this.daysForm = this.fb.group({
       daterange: [[], Validators.required],
